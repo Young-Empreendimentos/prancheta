@@ -62,15 +62,28 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
   const streets = [...new Set(ruaObjs.map(r => r.name))].sort()
 
   const polys = sources.polys.filter(p => lotLayer === '__all__' || p.layer === lotLayer)
-  const lots = []
+  const cand = []
   for (const p of polys) {
     const lbl = labels.find(t => pip([t.x, t.y], p.verts)); if (!lbl) continue
     const num = (lbl.text.match(/\d+/) || ['?'])[0]
     const qm = (p.src && p.src.match(/(?:q(?:ua|au)dra|\.Q)\s*0?(\d+)/i) || [])[1] || '?'
     let vs = p.verts, bg = p.bulges || []
     if (signedArea(vs) > 0) { const r = reversePoly(vs, bg); vs = r.v; bg = r.b }
-    lots.push({ num, quadra: qm, layer: p.layer, verts: vs, bulges: bg, src: p.src })
+    cand.push({ num, quadra: qm, layer: p.layer, verts: vs, bulges: bg, src: p.src })
   }
+  // descarta o que NÃO é lote de verdade, senão rouba a frente / infla a área dos lotes reais:
+  //  • CONTÊINER: polígono que engloba o centro de um lote BEM MENOR (razão de área > 1,8) =
+  //    contorno de quadra ou gleba com um "LOTE nn" solto dentro;
+  //  • DUPLICATA: mesma revisão desenhada 2× (mesmo centro e mesma área) — conta uma vez só.
+  const cCent = cand.map(l => centroid(l.verts))
+  const cArea = cand.map(l => areaWithArcs(l.verts, l.bulges || []))
+  const lots = []
+  const kept = []
+  cand.forEach((l, i) => {
+    if (cand.some((o, j) => j !== i && pip(cCent[j], l.verts) && cArea[i] > cArea[j] * 1.8)) return
+    if (kept.some(k => Math.hypot(k.c[0] - cCent[i][0], k.c[1] - cCent[i][1]) < 1 && Math.abs(k.a - cArea[i]) < Math.max(1, cArea[i] * 0.2))) return
+    kept.push({ c: cCent[i], a: cArea[i] }); lots.push(l)
+  })
   lots.sort((a, b) => { const qa = parseInt(a.quadra) || 999, qb = parseInt(b.quadra) || 999; if (qa !== qb) return qa - qb; return (parseInt(a.num) || 0) - (parseInt(b.num) || 0) })
 
   // áreas públicas (polígonos "ÁREA ..." que NÃO englobam lotes — exclui gleba/quadra)
@@ -111,10 +124,15 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
       }
       lot.sides.push({ idx: i, sk, from: lot.pts[i], to: lot.pts[j], az: azimuth(vs[i], vs[j]), dist: dist(vs[i], vs[j]), bulge: bl, arc: ai, conf, kind, val, auto })
     }
-    // o memorial começa pela FRENTE: o lado que dá para rua; em esquina (2+ ruas), a MENOR delas
-    const ladosRua = lot.sides.filter(s => s.kind === 'rua')
-    let front = ladosRua.length === 1 ? ladosRua[0] : null
-    if (ladosRua.length >= 2) { front = ladosRua[0]; for (const s of ladosRua) if (s.dist < front.dist) front = s }
+    // o memorial começa pela FRENTE (lado voltado à rua/via); em esquina, a MENOR frente.
+    // frente = menor lado que NÃO confronta outro lote/área (é o lado aberto p/ via);
+    // rua interna confirmada tem prioridade sobre limite do loteamento / "a definir".
+    const lenOf = s => (s.arc && s.arc.arc) ? s.arc.desenv : s.dist
+    const ruaSides = lot.sides.filter(s => s.kind === 'rua')
+    const extSides = lot.sides.filter(s => s.kind === 'perimetro' || s.kind === 'wd')
+    const frentes = ruaSides.length ? ruaSides : extSides
+    let front = null
+    for (const s of frentes) if (!front || lenOf(s) < lenOf(front)) front = s
     if (front) { const fi = lot.sides.indexOf(front); if (fi > 0) lot.sides = lot.sides.slice(fi).concat(lot.sides.slice(0, fi)) }
     lot.frente = front ? front.conf : null
     lot.area = areaWithArcs(vs, bg)
