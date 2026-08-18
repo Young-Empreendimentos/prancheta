@@ -1,0 +1,27 @@
+# dependências
+node_modules/
+
+# build
+dist/
+dist-ssr/
+
+# variáveis de ambiente (chaves do Supabase)
+.env
+.env.local
+.env.*.local
+
+# arquivos de cliente — nunca versionar DXF/desenhos (dados reais de loteamento)
+*.dxf
+*.dwg
+
+# temporários
+*.tmp
+*.log
+*.docx
+~lock*
+.DS_Store
+Thumbs.db
+
+# editor
+.vscode/
+.idea/
