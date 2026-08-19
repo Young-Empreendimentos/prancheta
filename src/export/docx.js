@@ -32,25 +32,39 @@ function cell(text, fmt, { bold = false, align = AlignmentType.LEFT, w } = {}) {
     children: [new Paragraph({ alignment: align, children: [new TextRun({ text, bold, font: fmt.font, size: fmt.size - 2 })] })],
   })
 }
-function quadroAreasTable(q, fmt) {
+function quadroAreasTable(q, fmt, tipo = 'loteamento') {
   const g = q.gleba || (q.lotes + q.verde + q.inst)
   const vias = g - q.lotes - q.verde - q.inst
   const pct = x => g > 0 ? (x / g * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '—'
   const border = { style: BorderStyle.SINGLE, size: 4, color: '999999' }
   const borders = { top: border, bottom: border, left: border, right: border, insideHorizontal: border, insideVertical: border }
   const row = (a, b, c, bold = false) => new TableRow({ children: [cell(a, fmt, { bold, w: 55 }), cell(b, fmt, { align: AlignmentType.RIGHT, bold, w: 27 }), cell(c, fmt, { align: AlignmentType.RIGHT, bold, w: 18 })] })
-  return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE }, borders,
-    rows: [
-      new TableRow({ tableHeader: true, children: [cell('Discriminação', fmt, { bold: true }), cell('Área (m²)', fmt, { bold: true, align: AlignmentType.RIGHT }), cell('%', fmt, { bold: true, align: AlignmentType.RIGHT })] }),
+  const header = new TableRow({ tableHeader: true, children: [cell('Discriminação', fmt, { bold: true }), cell('Área (m²)', fmt, { bold: true, align: AlignmentType.RIGHT }), cell('%', fmt, { bold: true, align: AlignmentType.RIGHT })] })
+  const rows = tipo === 'condominio'
+    ? [
+      header,
+      row('Área total da gleba (matrícula-mãe)', nb(g, 2), '100%', true),
+      row(`Unidades autônomas — área privativa (${q.nLotes} unidades)`, nb(q.lotes, 2), pct(q.lotes)),
+      row('Áreas comuns (vias internas, lazer, verde)', nb(g - q.lotes, 2), pct(g - q.lotes), true),
+    ]
+    : [
+      header,
       row('Área total da gleba', nb(g, 2), '100%', true),
       row(`Lotes (${q.nLotes} lotes · ${q.quadras} quadras)`, nb(q.lotes, 2), pct(q.lotes)),
       row('Sistema viário', nb(vias, 2), pct(vias)),
       row('Área verde / de lazer', nb(q.verde, 2), pct(q.verde)),
       row('Área institucional', nb(q.inst, 2), pct(q.inst)),
       row('Área pública total', nb(vias + q.verde + q.inst, 2), pct(vias + q.verde + q.inst), true),
-    ],
-  })
+    ]
+  return new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, borders, rows })
+}
+// quadro das frações ideais (condomínio): uma linha por unidade
+function fracoesTable(state, fmt) {
+  const border = { style: BorderStyle.SINGLE, size: 4, color: '999999' }
+  const borders = { top: border, bottom: border, left: border, right: border, insideHorizontal: border, insideVertical: border }
+  const rows = [new TableRow({ tableHeader: true, children: [cell('Unidade', fmt, { bold: true }), cell('Quadra', fmt, { bold: true }), cell('Área privativa (m²)', fmt, { bold: true, align: AlignmentType.RIGHT }), cell('Fração ideal', fmt, { bold: true, align: AlignmentType.RIGHT })] })]
+  for (const l of state.lots) rows.push(new TableRow({ children: [cell(String(l.num), fmt, { w: 20 }), cell(String(l.quadra).padStart(2, '0'), fmt, { w: 18 }), cell(nb(l.area, 2), fmt, { align: AlignmentType.RIGHT, w: 32 }), cell(nb((l.fracaoIdeal || 0) * 100, 4) + '%', fmt, { align: AlignmentType.RIGHT, w: 30 })] }))
+  return new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, borders, rows })
 }
 
 export function buildMemoriaisDoc(state, opts) {
@@ -59,28 +73,33 @@ export function buildMemoriaisDoc(state, opts) {
   const sec = modelo.secoes || { lotes: true, gleba: true, publicas: true, quadro: true }
   const fmt = { font: modelo.word.fonte, size: modelo.word.tamanhoPt * 2 }
   const mopts = { ...opts, modelo }
+  const cond = modelo.tipo === 'condominio'
   const children = []
   children.push(title(modelo.word.titulo || 'MEMORIAL DESCRITIVO', fmt))
-  children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 240 }, children: [new TextRun({ text: `Loteamento ${loteamento} — ${municipio}`, bold: true, font: fmt.font, size: fmt.size })] }))
+  children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 240 }, children: [new TextRun({ text: `${cond ? 'Condomínio' : 'Loteamento'} ${loteamento} — ${municipio}`, bold: true, font: fmt.font, size: fmt.size })] }))
 
   if (sec.quadro) {
     children.push(quadraHead('QUADRO DE ÁREAS', fmt))
-    children.push(quadroAreasTable(computeQuadroAreas(state), fmt))
+    children.push(quadroAreasTable(computeQuadroAreas(state), fmt, modelo.tipo))
+    if (cond) {
+      children.push(quadraHead('QUADRO DAS FRAÇÕES IDEAIS', fmt))
+      children.push(fracoesTable(state, fmt))
+    }
   }
   if (sec.gleba) {
     const gleba = buildGleba(state)
     if (gleba) {
-      children.push(quadraHead('MEMORIAL DA GLEBA', fmt))
+      children.push(quadraHead(cond ? 'MEMORIAL DA GLEBA (MATRÍCULA-MÃE)' : 'MEMORIAL DA GLEBA', fmt))
       children.push(memorialPar(glebaMemorial(gleba, opts.glebaConf || {}, mopts), fmt))
     }
   }
   if (sec.publicas && state.areaObjs.length) {
-    children.push(quadraHead('ÁREAS PÚBLICAS', fmt))
+    children.push(quadraHead(cond ? 'ÁREAS COMUNS' : 'ÁREAS PÚBLICAS', fmt))
     for (const ar of state.areaObjs) children.push(memorialPar(areaMemorial(ar, state, mopts).text, fmt))
   }
   if (sec.lotes) {
     children.push(new Paragraph({ spacing: { before: 120 }, children: [] }))
-    children.push(quadraHead('MEMORIAIS DOS LOTES', fmt))
+    children.push(quadraHead(cond ? 'MEMORIAIS DAS UNIDADES AUTÔNOMAS' : 'MEMORIAIS DOS LOTES', fmt))
     let curQ = null
     for (const lot of state.lots) {
       if (lot.quadra !== curQ) { curQ = lot.quadra; children.push(quadraHead('Quadra ' + String(curQ).padStart(2, '0'), fmt)) }

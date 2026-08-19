@@ -18,13 +18,14 @@ function medida(modelo, sd) {
 }
 // cláusula de confrontação conforme o tipo de lado e o modelo
 function confClause(modelo, sd) {
-  const c = modelo.desc.conf
+  const c = modelo.desc.conf, cond = modelo.tipo === 'condominio', termo = modelo.termoUnidade || 'Lote'
+  const lc = s => cond ? String(s).replace(/^Lote\b/, termo) : s   // "Lote 04" -> "Unidade Autônoma 04" em condomínio
   if (sd.kind === 'rua') return render(c.rua, { c: sd.conf })
-  if (sd.kind === 'lote') return render(c.lote, { c: sd.conf })
+  if (sd.kind === 'lote') return render(c.lote, { c: lc(sd.conf) })
   if (sd.kind === 'area') return render(c.area, { c: sd.conf })
-  if (sd.kind === 'perimetro') return render(c.perimetro, { c: sd.val || '[limite do loteamento — definir vizinho]' })
+  if (sd.kind === 'perimetro') return render(c.perimetro, { c: sd.val || (cond ? '[limite do condomínio — definir vizinho]' : '[limite do loteamento — definir vizinho]') })
   if (sd.kind === 'wd') return c.wd
-  return render(c.lote, { c: sd.conf })
+  return render(c.lote, { c: lc(sd.conf) })
 }
 
 function insertTf(e, parent, blocks) {
@@ -237,6 +238,10 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
   const byQ = {}; lots.forEach(l => { (byQ[l.quadra] = byQ[l.quadra] || []).push(l) })
   Object.values(byQ).forEach(arr => { const a = arr.map(l => l.area).sort((x, y) => x - y); const med = a[Math.floor(a.length / 2)] || 0; arr.forEach(l => { if (med > 0 && (l.area < med * 0.4 || l.area > med * 2.5)) { l.issues.push('área destoa da quadra'); l.warn = true } }) })
 
+  // fração ideal (condomínio): proporção da área privativa da unidade sobre o total das unidades
+  const somaPriv = lots.reduce((a, l) => a + l.area, 0) || 1
+  lots.forEach(l => { l.fracaoIdeal = l.area / somaPriv })
+
   // NUMERAÇÃO DE MARCOS: 'gerar' = contínua 1..N, percorrendo lote a lote no sentido horário a partir da
   // frente (ordem de lot.sides), reaproveitando cantos compartilhados; depois sobras de gleba/áreas.
   let marcosMap = null, marcos = null
@@ -258,14 +263,16 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
 
 export function lotMemorial(lot, { loteamento = '—', municipio = '—', modelo = modeloAlegrete() } = {}) {
   const d = modelo.desc, comMarco = modelo.marcos.exige !== false
-  let s = render(d.cabecalho, { num: lot.num, loteamento, municipio, quadra: String(lot.quadra).padStart(2, '0'), sentido: d.sentido })
+  const unidade = modelo.termoUnidade || 'Lote'
+  const fracao = lot.fracaoIdeal != null ? nb(lot.fracaoIdeal * 100, 4) + '%' : '—'
+  let s = render(d.cabecalho, { unidade, num: lot.num, loteamento, municipio, quadra: String(lot.quadra).padStart(2, '0'), sentido: d.sentido })
   s += comMarco ? render(d.partida, { p0: lot.sides[0].from }) : d.partidaSemMarco
   lot.sides.forEach((sd, k) => {
     const ate = comMarco ? render(d.ate, { to: sd.to }) : d.ateSemMarco
     s += d.conector + confClause(modelo, sd) + medida(modelo, sd) + ate
     s += (k === lot.sides.length - 1) ? d.encerra + d.sep : d.sep
   })
-  s += render(d.fechamento, { area: nb(lot.area, 2), extenso: areaExtenso(lot.area) })
+  s += render(d.fechamento, { area: nb(lot.area, 2), extenso: areaExtenso(lot.area), fracao })
   return s
 }
 

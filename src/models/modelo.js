@@ -2,33 +2,41 @@
 // O modelo de Alegrete reproduz exatamente o memorial validado contra o cartório.
 // A arquiteta cria um modelo por cidade (as "definições da descrição"); a geração e o Word leem daqui.
 
-export function novoModeloBase(cidade = '', uf = '') {
+// tipo: 'loteamento' (Lei 6.766 — lotes, vias/áreas PÚBLICAS) ou 'condominio' (Lei 13.465 / CC art.1.358-A —
+// unidades autônomas + fração ideal, vias/áreas COMUNS privadas). O tipo troca termo, redação e quadro.
+export function novoModeloBase(cidade = '', uf = '', tipo = 'loteamento') {
+  const cond = tipo === 'condominio'
   return {
-    id: 'm' + Math.abs(hash(cidade + uf + Math.round(performance.now()))),
+    id: 'm' + Math.abs(hash(cidade + uf + tipo + Math.round(performance.now()))),
     cidade, uf,
+    tipo,                                                      // 'loteamento' | 'condominio'
+    termoUnidade: cond ? 'Unidade Autônoma' : 'Lote',          // como cada parcela é chamada no memorial
     nome: (cidade && uf) ? `${cidade}/${uf}` : (cidade || 'Novo modelo'),
-    loteamento: '',                                            // nome do loteamento (puxado direto no memorial)
-    municipio: (cidade && uf) ? `${cidade}/${uf}` : '',        // município (puxado direto no memorial)
+    loteamento: '',                                            // nome do loteamento/condomínio (puxado no memorial)
+    municipio: (cidade && uf) ? `${cidade}/${uf}` : '',        // município (puxado no memorial)
     marcos: { exige: true },                                   // exige pontos numerados?
     angulo: 'azimute',                                         // 'azimute' | 'rumo' | 'ambos'
     coordenadas: { incluir: false, sistema: 'local' },         // incluir N/E de cada vértice? local | utm
     secoes: { lotes: true, gleba: true, publicas: true, quadro: true },
     word: { fonte: 'Times New Roman', tamanhoPt: 12, margemCm: 2.5, titulo: 'MEMORIAL DESCRITIVO' },
     confrontacoes: [],  // confrontações de limite reutilizáveis (ex.: "Terras de Fulano", "Estrada Municipal")
-    desc: descPadrao(),
+    desc: descPadrao(tipo),
   }
 }
 
-function descPadrao() {
+function descPadrao(tipo = 'loteamento') {
+  const cond = tipo === 'condominio'
   return {
     sentido: 'horário',
     conector: 'deste ponto segue ',
-    cabecalho: 'Lote {num}: Um terreno urbano localizado no Loteamento "{loteamento}", no município de {municipio}, situado na Quadra {quadra}, com as seguintes medidas e confrontações em sentido {sentido}: ',
+    cabecalho: cond
+      ? '{unidade} {num}: Um terreno integrante do Condomínio "{loteamento}", no município de {municipio}, situado na Quadra {quadra}, com as seguintes medidas e confrontações em sentido {sentido}: '
+      : '{unidade} {num}: Um terreno urbano localizado no Loteamento "{loteamento}", no município de {municipio}, situado na Quadra {quadra}, com as seguintes medidas e confrontações em sentido {sentido}: ',
     partida: 'Partindo do ponto {p0}; ',
-    partidaSemMarco: 'Inicia-se a descrição pela frente do lote, ',
+    partidaSemMarco: cond ? 'Inicia-se a descrição pela frente da unidade, ' : 'Inicia-se a descrição pela frente do lote, ',
     conf: {
-      rua: 'no alinhamento com a {c}',
-      lote: 'confrontando com o {c}',
+      rua: cond ? 'confrontando com a {c}' : 'no alinhamento com a {c}',   // condomínio: via interna é área comum
+      lote: cond ? 'confrontando com a {c}' : 'confrontando com o {c}',     // "a Unidade" (fem.) vs "o Lote" (masc.)
       area: 'confrontando com a {c}',
       perimetro: 'confrontando com {c}',
       wd: 'confrontando com [A DEFINIR]',
@@ -42,16 +50,27 @@ function descPadrao() {
     ateSemMarco: '',
     encerra: ', ponto inicial da descrição deste perímetro',
     sep: '; ',
-    fechamento: 'perfazendo uma área total de {area} m² ({extenso}).',
-    // gleba (perímetro)
-    glebaCabecalho: 'Gleba de terras com área de {area} m² ({extenso}), situada no município de {municipio}, destinada ao Loteamento "{loteamento}", com o seguinte perímetro, no sentido {sentido}: Inicia-se a descrição no marco {p0}; ',
+    fechamento: cond
+      ? 'perfazendo uma área privativa de {area} m² ({extenso}), correspondente à fração ideal de {fracao} nas áreas comuns do condomínio.'
+      : 'perfazendo uma área total de {area} m² ({extenso}).',
+    // gleba (perímetro / matrícula-mãe)
+    glebaCabecalho: cond
+      ? 'Gleba de terras (matrícula-mãe) com área de {area} m² ({extenso}), situada no município de {municipio}, destinada ao Condomínio "{loteamento}", com o seguinte perímetro, no sentido {sentido}: Inicia-se a descrição no marco {p0}; '
+      : 'Gleba de terras com área de {area} m² ({extenso}), situada no município de {municipio}, destinada ao Loteamento "{loteamento}", com o seguinte perímetro, no sentido {sentido}: Inicia-se a descrição no marco {p0}; ',
     glebaConf: 'confrontando com {c}',
     glebaAte: ', até o marco {to}',
     glebaEncerra: ', marco inicial desta descrição, fechando o perímetro.',
-    // área pública
-    areaCabecalho: '{nome}: área pública com {area} m² ({extenso}), integrante do Loteamento "{loteamento}", município de {municipio}, com o seguinte perímetro, no sentido {sentido}: Inicia-se no marco {p0}; ',
+    // área pública (loteamento) / área comum (condomínio)
+    areaCabecalho: cond
+      ? '{nome}: área comum do Condomínio "{loteamento}" com {area} m² ({extenso}), município de {municipio}, com o seguinte perímetro, no sentido {sentido}: Inicia-se no marco {p0}; '
+      : '{nome}: área pública com {area} m² ({extenso}), integrante do Loteamento "{loteamento}", município de {municipio}, com o seguinte perímetro, no sentido {sentido}: Inicia-se no marco {p0}; ',
     areaEncerra: ', marco inicial, fechando o perímetro.',
   }
+}
+
+// troca o tipo do modelo (loteamento <-> condomínio), regenerando termo e redação padrão daquele tipo
+export function aplicarTipo(modelo, tipo) {
+  return { ...modelo, tipo, termoUnidade: tipo === 'condominio' ? 'Unidade Autônoma' : 'Lote', desc: descPadrao(tipo) }
 }
 
 // Modelo semente: Alegrete/RS (o que já foi validado). É o modelo padrão até a arquiteta criar outros.

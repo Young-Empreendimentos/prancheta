@@ -239,7 +239,7 @@ export default function App() {
       )}
 
       {modal === 'conferencia' && <Modal title="Conferência do desenho" wide onClose={() => setModal(null)}><ConferenciaPanel state={state} onGoLot={i => { setSel(i); setModal(null) }} /></Modal>}
-      {modal === 'quadro' && <Modal title="Quadro de áreas do parcelamento" onClose={() => setModal(null)}><QuadroAreasPanel state={state} /></Modal>}
+      {modal === 'quadro' && <Modal title="Quadro de áreas do parcelamento" onClose={() => setModal(null)}><QuadroAreasPanel state={state} tipo={modelo.tipo} /></Modal>}
       {modal === 'gleba' && <Modal title="Memorial descritivo da gleba (perímetro)" wide onClose={() => setModal(null)}><GlebaPanel state={state} opts={opts} conf={glebaConf} setConf={setGlebaConf} /></Modal>}
       {modal === 'vias' && <Modal title="Sistema viário e áreas públicas" wide onClose={() => setModal(null)}><ViasAreasPanel state={state} opts={opts} /></Modal>}
     </div>

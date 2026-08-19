@@ -5,12 +5,14 @@ import { nb } from '../engine/extenso.js'
 
 const pct = (x, g) => g > 0 ? (x / g * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%' : '—'
 
-export function QuadroAreasPanel({ state }) {
+export function QuadroAreasPanel({ state, tipo = 'loteamento' }) {
   const q = useMemo(() => computeQuadroAreas(state), [state])
   const [gleba, setGleba] = useState((q.gleba || (q.lotes + q.verde + q.inst)).toFixed(2))
   const g = parseFloat(gleba) || 0
+  const cond = tipo === 'condominio'
   const vias = g - q.lotes - q.verde - q.inst
   const pub = vias + q.verde + q.inst
+  const comum = g - q.lotes
   const Row = ({ n, a, tot }) => <tr className={tot ? 'tot' : ''}><td>{n}</td><td className="num">{nb(a, 2)}</td><td className="num">{pct(a, g)}</td></tr>
   return (
     <div>
@@ -18,17 +20,24 @@ export function QuadroAreasPanel({ state }) {
       <div className="tblwrap">
         <table><thead><tr><th>Discriminação</th><th className="num">Área (m²)</th><th className="num">%</th></tr></thead>
           <tbody>
-            <tr className="tot"><td>Área total da gleba</td><td className="num">{nb(g, 2)}</td><td className="num">100%</td></tr>
-            <Row n={`Lotes (${q.nLotes} lotes · ${q.quadras} quadras)`} a={q.lotes} />
-            <Row n="Sistema viário (ruas)" a={vias} />
-            <Row n="Área verde / de lazer" a={q.verde} />
-            <Row n="Área institucional" a={q.inst} />
-            <tr className="tot"><td>Área pública total (viário + verde + institucional)</td><td className="num">{nb(pub, 2)}</td><td className="num">{pct(pub, g)}</td></tr>
+            <tr className="tot"><td>Área total da gleba{cond ? ' (matrícula-mãe)' : ''}</td><td className="num">{nb(g, 2)}</td><td className="num">100%</td></tr>
+            {cond ? <>
+              <Row n={`Unidades autônomas — área privativa (${q.nLotes})`} a={q.lotes} />
+              <tr className="tot"><td>Áreas comuns (vias internas, lazer, verde)</td><td className="num">{nb(comum, 2)}</td><td className="num">{pct(comum, g)}</td></tr>
+            </> : <>
+              <Row n={`Lotes (${q.nLotes} lotes · ${q.quadras} quadras)`} a={q.lotes} />
+              <Row n="Sistema viário (ruas)" a={vias} />
+              <Row n="Área verde / de lazer" a={q.verde} />
+              <Row n="Área institucional" a={q.inst} />
+              <tr className="tot"><td>Área pública total (viário + verde + institucional)</td><td className="num">{nb(pub, 2)}</td><td className="num">{pct(pub, g)}</td></tr>
+            </>}
           </tbody>
         </table>
       </div>
-      {vias < -0.5 && <p className="note warn">A área de vias ficou negativa — a gleba informada é menor que lotes + áreas. Confira o valor.</p>}
-      <p className="note">A <b>área pública</b> ({pct(pub, g)}) é o que a prefeitura confere contra o mínimo da Lei 6.766. O <b>sistema viário</b> é calculado por diferença (as ruas não são polígonos fechados no desenho).</p>
+      {vias < -0.5 && !cond && <p className="note warn">A área de vias ficou negativa — a gleba informada é menor que lotes + áreas. Confira o valor.</p>}
+      <p className="note">{cond
+        ? <>As <b>áreas comuns</b> pertencem aos condôminos em <b>fração ideal</b> (Lei 13.465 / CC art. 1.358-A) — não são bem público. A fração ideal de cada unidade sai proporcional à área privativa (o quadro completo vai no Word).</>
+        : <>A <b>área pública</b> ({pct(pub, g)}) é o que a prefeitura confere contra o mínimo da Lei 6.766. O <b>sistema viário</b> é calculado por diferença (as ruas não são polígonos fechados no desenho).</>}</p>
     </div>
   )
 }

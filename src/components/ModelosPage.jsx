@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { listModelos, saveModelo, deleteModelo, novoModeloBase } from '../models/modelo.js'
+import { listModelos, saveModelo, deleteModelo, novoModeloBase, aplicarTipo } from '../models/modelo.js'
 import { lotMemorial } from '../engine/loteamento.js'
 
 // lote de exemplo (fixo) para o preview ao vivo da redação
@@ -100,8 +100,15 @@ export default function ModelosPage({ onClose }) {
         <div className="mod-grid">
           <section className="mod-card">
             <h3>Identificação</h3>
+            <Field label="Tipo do empreendimento" hint="muda termo, redação e quadro de áreas">
+              <select value={draft.tipo || 'loteamento'} onChange={e => { const t = e.target.value; if (t !== (draft.tipo || 'loteamento') && confirm('Trocar o tipo redefine a redação padrão para ' + (t === 'condominio' ? 'condomínio' : 'loteamento') + '. Continuar?')) { setDraft(d => aplicarTipo(d, t)); setDirty(true) } }}>
+                <option value="loteamento">Loteamento (Lei 6.766 — lotes, vias públicas)</option>
+                <option value="condominio">Condomínio de lotes (Lei 13.465 — unidades, áreas comuns)</option>
+              </select>
+            </Field>
+            <Field label="Termo da unidade" hint='como cada parcela é chamada'><input value={draft.termoUnidade || 'Lote'} onChange={e => upd({ termoUnidade: e.target.value })} placeholder="Lote / Unidade Autônoma" /></Field>
             <Field label="Nome do modelo"><input value={draft.nome} onChange={e => upd({ nome: e.target.value })} placeholder="ex.: Alegrete/RS" /></Field>
-            <Field label="Loteamento" hint="puxado direto no memorial"><input value={draft.loteamento || ''} onChange={e => upd({ loteamento: e.target.value })} placeholder="ex.: Novo Alegrete" /></Field>
+            <Field label={(draft.tipo === 'condominio' ? 'Condomínio' : 'Loteamento')} hint="puxado direto no memorial"><input value={draft.loteamento || ''} onChange={e => upd({ loteamento: e.target.value })} placeholder="ex.: Novo Alegrete" /></Field>
             <Field label="Município" hint="puxado direto no memorial"><input value={draft.municipio || ''} onChange={e => upd({ municipio: e.target.value })} placeholder="ex.: Alegrete/RS" /></Field>
           </section>
 
