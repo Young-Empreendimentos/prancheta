@@ -45,7 +45,7 @@ function drawEnt(ctx, e, tf, depth, sx, sy, view, model) {
     case 'insert': { if (depth > 4) break; const b = model.blocks[e.name]; if (!b) break; const t2 = insertTf(e, tf, model.blocks); for (const be of b.entities) drawEnt(ctx, be, t2, depth + 1, sx, sy, view, model); break }
   }
 }
-export function drawModel(ctx, w, h, model, view, { sel = null, pts = null } = {}) {
+export function drawModel(ctx, w, h, model, view, { sel = null, pts = null, marcos = null } = {}) {
   const sx = x => x * view.scale + view.tx, sy = y => -y * view.scale + view.ty
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, w, h)
   ctx.fillStyle = '#0b0d11'; ctx.fillRect(0, 0, w, h)
@@ -53,6 +53,16 @@ export function drawModel(ctx, w, h, model, view, { sel = null, pts = null } = {
   ctx.lineWidth = 1; ctx.lineJoin = 'round'; ctx.lineCap = 'round'
   const id = (x, y) => [x, y]
   for (const e of model.entities) drawEnt(ctx, e, id, 0, sx, sy, view, model)
+  if (marcos) {
+    const showN = view.scale > 1.2
+    ctx.font = '10px ui-monospace,Consolas,monospace'; ctx.textBaseline = 'bottom'; ctx.textAlign = 'left'
+    for (const m of marcos) {
+      const X = sx(m.x), Y = sy(m.y)
+      if (X < -30 || X > w + 30 || Y < -30 || Y > h + 30) continue
+      ctx.fillStyle = '#4f9dff'; ctx.beginPath(); ctx.arc(X, Y, 2.4, 0, 2 * Math.PI); ctx.fill()
+      if (showN) { ctx.fillStyle = '#dbeafe'; ctx.fillText(String(m.n), X + 3.5, Y - 2.5) }
+    }
+  }
   if (sel) {
     ctx.beginPath(); sel.forEach((p, i) => { const X = sx(p[0]), Y = sy(p[1]); i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y) }); ctx.closePath()
     ctx.fillStyle = 'rgba(255,176,32,.18)'; ctx.fill(); ctx.strokeStyle = '#ffb020'; ctx.lineWidth = 2.4; ctx.stroke()

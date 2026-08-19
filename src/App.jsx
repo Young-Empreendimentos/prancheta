@@ -7,6 +7,7 @@ import { exportMemoriaisDocx } from './export/docx.js'
 import Modal from './components/Modal.jsx'
 import Viewer from './components/Viewer.jsx'
 import ModelosPage from './components/ModelosPage.jsx'
+import MarcosPage from './components/MarcosPage.jsx'
 import { listModelos, getModelo } from './models/modelo.js'
 import { QuadroAreasPanel, GlebaPanel, ViasAreasPanel, ConferenciaPanel } from './components/panels.jsx'
 
@@ -22,10 +23,16 @@ export default function App() {
   const [loteamento, setLoteamento] = useState('Novo Alegrete')
   const [municipio, setMunicipio] = useState('Alegrete/RS')
   const [view, setView] = useState('memorial')
+  const [numeracao, setNumeracaoState] = useState('dxf')
   const [modelos, setModelos] = useState(() => listModelos())
   const [modeloId, setModeloId] = useState('alegrete-rs')
   const modelo = useMemo(() => getModelo(modeloId), [modeloId, modelos])
   const opts = { loteamento, municipio, modelo }
+
+  function setNumeracao(mode) {
+    setNumeracaoState(mode)
+    setState(s => s ? buildLoteamento(s.model, s.sources, { resolutions, numeracao: mode, lotLayer: s.lotLayer }) : s)
+  }
 
   async function onFile(e) {
     const f = e.target.files[0]; if (!f) return
@@ -34,7 +41,7 @@ export default function App() {
       if (/\.dwg$/i.test(f.name)) { setErro('Arquivo .dwg não é lido diretamente — exporte como .dxf no AutoCAD.'); return }
       const model = parseDXF(decodeDXF(await f.arrayBuffer()))
       const sources = collectSources(model)
-      const st = buildLoteamento(model, sources, { resolutions: {} })
+      const st = buildLoteamento(model, sources, { resolutions: {}, numeracao })
       if (!st.lots.length) setErro('Nenhum lote encontrado. Confirme que é um DXF de loteamento (lotes com rótulo "LOTE nn").')
       setState(st); setResolutions({}); setGlebaConf({}); setFileName(f.name); setSel(-1)
     } catch (err) { setErro('Falha ao ler o arquivo: ' + err.message) }
@@ -43,7 +50,7 @@ export default function App() {
   function resolveSide(sk, kind, val) {
     const nr = { ...resolutions }; if (!kind) delete nr[sk]; else nr[sk] = { kind, val }
     setResolutions(nr)
-    setState(s => buildLoteamento(s.model, s.sources, { resolutions: nr, lotLayer: s.lotLayer }))
+    setState(s => buildLoteamento(s.model, s.sources, { resolutions: nr, lotLayer: s.lotLayer, numeracao }))
   }
   function onSideSelect(sk, v) {
     if (!v) return resolveSide(sk, null)
@@ -69,6 +76,12 @@ export default function App() {
     </div>
   )
 
+  if (view === 'marcos') return (
+    <div className="app">
+      <MarcosPage state={state} numeracao={numeracao} setNumeracao={setNumeracao} onClose={() => setView('memorial')} />
+    </div>
+  )
+
   return (
     <div className="app">
       <header className="topbar">
@@ -82,6 +95,7 @@ export default function App() {
             </select>
           </label>
           <button className="btn" onClick={() => setView('modelos')}>⚙ Modelos</button>
+          <button className="btn" onClick={() => setView('marcos')}>◉ Marcos</button>
           {state && <>
             <button className="btn" onClick={() => setModal('conferencia')}>Conferência</button>
             <button className="btn" onClick={() => setModal('quadro')}>Quadro de áreas</button>

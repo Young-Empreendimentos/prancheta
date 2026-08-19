@@ -8,15 +8,15 @@ function bboxOf(verts) {
   return { mnx: mnx - pad, mny: mny - pad, mxx: mxx + pad, mxy: mxy + pad }
 }
 
-export default function Viewer({ model, lot }) {
+export default function Viewer({ model, lot, marcos = null }) {
   const canvasRef = useRef(null)
   const view = useRef(null)
   const drag = useRef(null)
 
   const redraw = useCallback(() => {
     const cv = canvasRef.current; if (!cv || !model || !view.current) return
-    drawModel(cv.getContext('2d'), cv.width, cv.height, model, view.current, { sel: lot?.verts, pts: lot?.pts })
-  }, [model, lot])
+    drawModel(cv.getContext('2d'), cv.width, cv.height, model, view.current, { sel: lot?.verts, pts: lot?.pts, marcos })
+  }, [model, lot, marcos])
 
   // ajusta tamanho e enquadra (no lote, se houver; senão no loteamento)
   useEffect(() => {

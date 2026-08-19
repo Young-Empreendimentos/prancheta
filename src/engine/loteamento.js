@@ -2,7 +2,7 @@
 // quadro de áreas, gleba e áreas públicas. Portado e validado no protótipo (determinístico, sem IA).
 import {
   signedArea, dist, azimuth, toGMS, quad, toRumo, pip, reversePoly, arcInfo, areaWithArcs,
-  keyPt, sideKey, centroid,
+  keyPt, sideKey, marcoKey, centroid,
 } from './geometry.js'
 import { areaExtenso, nb } from './extenso.js'
 import { modeloAlegrete, render } from '../models/modelo.js'
@@ -63,6 +63,11 @@ function confront(a, b, self, allSides) {
   return best
 }
 function ptNum(v, numTexts) { let best = null, bd = 2.5; for (const t of numTexts) { const d = Math.hypot(t.x - v[0], t.y - v[1]); if (d < bd) { bd = d; best = t } } return best ? best.text : null }
+// rótulo do marco: usa a numeração gerada (state.marcosMap) se houver; senão o número do desenho; senão M-n
+function marcoLabel(state, v, i) {
+  if (state.marcosMap) { const n = state.marcosMap.get(marcoKey(v)); if (n != null) return String(n) }
+  return ptNum(v, state.numTexts) || ('M' + (i + 1))
+}
 // rua de um lado externo: normal para FORA do lote, pega o texto "RUA X" logo à frente
 function guessStreet(a, b, C, ruaObjs) {
   const M = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], L = dist(a, b); if (L < 1e-6) return null
@@ -95,7 +100,7 @@ function normVia(raw) {
   return pfx + ' ' + nome
 }
 
-export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions = {} } = {}) {
+export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions = {}, numeracao = 'dxf' } = {}) {
   const texts = sources.texts
   const numTexts = texts.filter(t => /^\d{1,4}$/.test(t.text))
   const ruaObjs = texts.map(t => { const n = normVia(t.text); return n ? { name: n, x: t.x, y: t.y } : null }).filter(Boolean)
@@ -193,7 +198,24 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
   const byQ = {}; lots.forEach(l => { (byQ[l.quadra] = byQ[l.quadra] || []).push(l) })
   Object.values(byQ).forEach(arr => { const a = arr.map(l => l.area).sort((x, y) => x - y); const med = a[Math.floor(a.length / 2)] || 0; arr.forEach(l => { if (med > 0 && (l.area < med * 0.4 || l.area > med * 2.5)) { l.issues.push('área destoa da quadra'); l.warn = true } }) })
 
-  return { model, sources, lots, areaObjs, ruaObjs, streets, allSides, numTexts, lotLayer }
+  // NUMERAÇÃO DE MARCOS: 'gerar' = contínua 1..N, percorrendo lote a lote no sentido horário a partir da
+  // frente (ordem de lot.sides), reaproveitando cantos compartilhados; depois sobras de gleba/áreas.
+  let marcosMap = null, marcos = null
+  if (numeracao === 'gerar') {
+    marcosMap = new Map(); marcos = []; let nn = 0
+    const assign = v => { const k = marcoKey(v); if (!marcosMap.has(k)) { marcosMap.set(k, ++nn); marcos.push({ n: nn, x: v[0], y: v[1], uso: 0 }) } return marcosMap.get(k) }
+    for (const lot of lots) for (const s of lot.sides) assign(lot.verts[s.idx])
+    if (glebaP) glebaP.verts.forEach(assign)
+    areaObjs.forEach(ar => ar.verts.forEach(assign))
+    // aplica aos lotes (pts e from/to de cada lado) e conta uso
+    for (const lot of lots) {
+      lot.pts = lot.verts.map(v => String(marcosMap.get(marcoKey(v))))
+      lot.sides.forEach(s => { s.from = lot.pts[s.idx]; s.to = lot.pts[(s.idx + 1) % lot.verts.length] })
+      new Set(lot.verts.map(v => marcosMap.get(marcoKey(v)))).forEach(n => { const m = marcos[n - 1]; if (m) m.uso++ })
+    }
+  }
+
+  return { model, sources, lots, areaObjs, ruaObjs, streets, allSides, numTexts, lotLayer, numeracao, marcosMap, marcos }
 }
 
 export function lotMemorial(lot, { loteamento = '—', municipio = '—', modelo = modeloAlegrete() } = {}) {
@@ -232,7 +254,7 @@ export function buildGleba(state) {
   const g = detectGleba(state); if (!g) return null
   let vs = g.p.verts.slice(), bg = (g.p.bulges || []).slice()
   if (signedArea(vs) > 0) { const r = reversePoly(vs, bg); vs = r.v; bg = r.b }
-  const pts = vs.map((v, i) => ptNum(v, state.numTexts) || ('M' + (i + 1)))
+  const pts = vs.map((v, i) => marcoLabel(state, v, i))
   const sides = []
   for (let i = 0; i < vs.length; i++) { const j = (i + 1) % vs.length; sides.push({ i, from: pts[i], to: pts[j], az: azimuth(vs[i], vs[j]), dist: dist(vs[i], vs[j]), arc: arcInfo(vs[i], vs[j], bg[i] || 0) }) }
   return { verts: vs, pts, sides, area: areaWithArcs(vs, bg) }
@@ -252,7 +274,7 @@ export function areaMemorial(ar, state, { loteamento = '—', municipio = '—',
   const d = modelo.desc
   let vs = ar.verts.slice(), bg = (ar.bulges || []).slice()
   if (signedArea(vs) > 0) { const r = reversePoly(vs, bg); vs = r.v; bg = r.b }
-  const pts = vs.map((v, i) => ptNum(v, state.numTexts) || ('M' + (i + 1)))
+  const pts = vs.map((v, i) => marcoLabel(state, v, i))
   const C = centroid(vs), area = areaWithArcs(vs, bg), nome = titleArea(ar.name)
   let s = render(d.areaCabecalho, { nome, area: nb(area, 2), extenso: areaExtenso(area), loteamento, municipio, sentido: d.sentido, p0: pts[0] })
   for (let i = 0; i < vs.length; i++) {

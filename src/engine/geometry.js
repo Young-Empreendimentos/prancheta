@@ -37,6 +37,8 @@ export function pip(pt, vs) {
 export function centroid(vs) { let x = 0, y = 0; for (const v of vs) { x += v[0]; y += v[1] } return [x / vs.length, y / vs.length] }
 
 export const keyPt = p => Math.round(p[0] * 1000) + '_' + Math.round(p[1] * 1000)
+// chave de marco com tolerância ~2cm: agrupa cantos coincidentes de lotes vizinhos no MESMO marco
+export const marcoKey = p => Math.round(p[0] / 0.02) + '_' + Math.round(p[1] / 0.02)
 export const sideKey = (a, b) => { const ka = keyPt(a), kb = keyPt(b); return ka < kb ? ka + '|' + kb : kb + '|' + ka }
 export function angClose(a, b) { let d = Math.abs(a - b) % 360; if (d > 180) d = 360 - d; return d < 1.5 }
 
