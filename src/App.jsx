@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { decodeDXF, parseDXF } from './engine/dxf.js'
+import { idbGet, idbSet, idbDel } from './engine/idb.js'
 import { collectSources, buildLoteamento, lotMemorial, computeQuadroAreas } from './engine/loteamento.js'
 import { nb } from './engine/extenso.js'
 import { toGMS, quadAbbr } from './engine/geometry.js'
@@ -23,6 +24,7 @@ export default function App() {
   const [view, setView] = useState('memorial')
   const [numeracao, setNumeracaoState] = useState('dxf')
   const [dxfRaw, setDxfRaw] = useState('')
+  const [salvo, setSalvo] = useState(false)
   const [modelos, setModelos] = useState(() => listModelos())
   const [modeloId, setModeloId] = useState('alegrete-rs')
   const modelo = useMemo(() => getModelo(modeloId), [modeloId, modelos])
@@ -33,6 +35,34 @@ export default function App() {
   function setNumeracao(mode) {
     setNumeracaoState(mode)
     setState(s => s ? buildLoteamento(s.model, s.sources, { resolutions, numeracao: mode, lotLayer: s.lotLayer }) : s)
+  }
+
+  // restaura a última sessão ao abrir (DXF + edições salvos no navegador)
+  useEffect(() => {
+    (async () => {
+      const d = await idbGet('dxf'); if (!d || !d.dxfRaw) return
+      const e = (await idbGet('edits')) || {}
+      try {
+        const model = parseDXF(d.dxfRaw), sources = collectSources(model)
+        const st = buildLoteamento(model, sources, { resolutions: e.resolutions || {}, numeracao: e.numeracao || 'dxf' })
+        setState(st); setResolutions(e.resolutions || {}); setGlebaConf(e.glebaConf || {})
+        setNumeracaoState(e.numeracao || 'dxf'); if (e.modeloId) setModeloId(e.modeloId)
+        setFileName(d.fileName || ''); setSel(e.sel ?? -1); setDxfRaw(d.dxfRaw); setSalvo(true)
+      } catch { /* sessão corrompida: ignora, app abre limpo */ }
+    })()
+  }, [])
+
+  // salva as edições automaticamente (debounce) — o DXF é salvo ao abrir o arquivo
+  useEffect(() => {
+    if (!dxfRaw) return
+    const id = setTimeout(() => { idbSet('edits', { resolutions, glebaConf, numeracao, modeloId, sel }).then(ok => { if (ok) setSalvo(true) }) }, 600)
+    return () => clearTimeout(id)
+  }, [dxfRaw, resolutions, glebaConf, numeracao, modeloId, sel])
+
+  function novoProjeto() {
+    if (dxfRaw && !confirm('Fechar o projeto atual? O que estiver salvo aqui será apagado.')) return
+    idbDel('dxf'); idbDel('edits')
+    setState(null); setResolutions({}); setGlebaConf({}); setDxfRaw(''); setFileName(''); setSel(-1); setNumeracaoState('dxf'); setSalvo(false); setErro('')
   }
 
   async function onFile(e) {
@@ -46,6 +76,7 @@ export default function App() {
       const st = buildLoteamento(model, sources, { resolutions: {}, numeracao })
       if (!st.lots.length) setErro('Nenhum lote encontrado. Confirme que é um DXF de loteamento (lotes com rótulo "LOTE nn").')
       setState(st); setResolutions({}); setGlebaConf({}); setFileName(f.name); setSel(-1); setDxfRaw(raw)
+      idbDel('edits'); idbSet('dxf', { dxfRaw: raw, fileName: f.name }).then(ok => setSalvo(!!ok))
     } catch (err) { setErro('Falha ao ler o arquivo: ' + err.message) }
     e.target.value = ''
   }
@@ -110,6 +141,8 @@ export default function App() {
             <button className="btn" onClick={() => setModal('gleba')}>Gleba</button>
             <button className="btn" onClick={() => setModal('vias')}>Vias e áreas</button>
             <button className="btn" onClick={onExport} disabled={exporting}>{exporting ? 'Gerando…' : '⬇ Word'}</button>
+            <button className="btn" onClick={novoProjeto} title="Fechar e limpar o projeto atual">Novo</button>
+            {salvo && <span className="saved-chip" title="Salvo automaticamente neste navegador">✓ salvo</span>}
           </>}
           <label className="btn primary">Abrir .dxf<input type="file" accept=".dxf,.txt" hidden onChange={onFile} /></label>
         </div>

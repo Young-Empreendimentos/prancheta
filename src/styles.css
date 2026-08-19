@@ -41,6 +41,7 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-ui);
 .btn.ghost{background:transparent;border-color:var(--border)}
 .btn.ghost.danger{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 40%,var(--border))}
 .btn:disabled{opacity:.5;cursor:default}
+.saved-chip{font-family:var(--font-mono);font-size:11px;color:var(--ok);display:inline-flex;align-items:center;gap:4px;padding:0 4px}
 .fields-inline select{font-family:var(--font-ui);font-size:13px;background:var(--elev);color:var(--text);border:1px solid var(--border-strong);border-radius:6px;padding:5px 8px;min-width:150px}
 
 /* ---- página de Modelos por cidade ---- */
