@@ -204,9 +204,8 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
   if (numeracao === 'gerar') {
     marcosMap = new Map(); marcos = []; let nn = 0
     const assign = v => { const k = marcoKey(v); if (!marcosMap.has(k)) { marcosMap.set(k, ++nn); marcos.push({ n: nn, x: v[0], y: v[1], uso: 0 }) } return marcosMap.get(k) }
+    // SÓ cantos de LOTE (não cria ponto onde não há lote). Cantos compartilhados já entram uma vez.
     for (const lot of lots) for (const s of lot.sides) assign(lot.verts[s.idx])
-    if (glebaP) glebaP.verts.forEach(assign)
-    areaObjs.forEach(ar => ar.verts.forEach(assign))
     // aplica aos lotes (pts e from/to de cada lado) e conta uso
     for (const lot of lots) {
       lot.pts = lot.verts.map(v => String(marcosMap.get(marcoKey(v))))

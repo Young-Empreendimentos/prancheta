@@ -24,6 +24,7 @@ export default function App() {
   const [municipio, setMunicipio] = useState('Alegrete/RS')
   const [view, setView] = useState('memorial')
   const [numeracao, setNumeracaoState] = useState('dxf')
+  const [dxfRaw, setDxfRaw] = useState('')
   const [modelos, setModelos] = useState(() => listModelos())
   const [modeloId, setModeloId] = useState('alegrete-rs')
   const modelo = useMemo(() => getModelo(modeloId), [modeloId, modelos])
@@ -39,11 +40,12 @@ export default function App() {
     setErro('')
     try {
       if (/\.dwg$/i.test(f.name)) { setErro('Arquivo .dwg não é lido diretamente — exporte como .dxf no AutoCAD.'); return }
-      const model = parseDXF(decodeDXF(await f.arrayBuffer()))
+      const raw = decodeDXF(await f.arrayBuffer())
+      const model = parseDXF(raw)
       const sources = collectSources(model)
       const st = buildLoteamento(model, sources, { resolutions: {}, numeracao })
       if (!st.lots.length) setErro('Nenhum lote encontrado. Confirme que é um DXF de loteamento (lotes com rótulo "LOTE nn").')
-      setState(st); setResolutions({}); setGlebaConf({}); setFileName(f.name); setSel(-1)
+      setState(st); setResolutions({}); setGlebaConf({}); setFileName(f.name); setSel(-1); setDxfRaw(raw)
     } catch (err) { setErro('Falha ao ler o arquivo: ' + err.message) }
     e.target.value = ''
   }
@@ -78,7 +80,7 @@ export default function App() {
 
   if (view === 'marcos') return (
     <div className="app">
-      <MarcosPage state={state} numeracao={numeracao} setNumeracao={setNumeracao} loteamento={loteamento} onClose={() => setView('memorial')} />
+      <MarcosPage state={state} numeracao={numeracao} setNumeracao={setNumeracao} loteamento={loteamento} dxfRaw={dxfRaw} onClose={() => setView('memorial')} />
     </div>
   )
 
