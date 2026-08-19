@@ -103,10 +103,18 @@ export function parseDXF(text) {
   }
   return { layers, blocks, entities }
 }
-// lê ArrayBuffer detectando encoding: tenta UTF-8, cai p/ Windows-1252 (ANSI, comum em DXF)
+// lê ArrayBuffer detectando encoding: DXF R2007+ é UTF-8, anteriores ANSI (windows-1252).
+// escolhe comparando os dois: um byte invalido nao derruba o UTF-8 inteiro.
 export function decodeDXF(buf) {
   const bytes = new Uint8Array(buf)
-  try { const u = new TextDecoder('utf-8', { fatal: false }).decode(bytes); if (u.indexOf('�') < 0) return u } catch (e) { /* noop */ }
-  try { return new TextDecoder('windows-1252').decode(bytes) } catch (e) { /* noop */ }
-  let s = ''; for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]); return s
+  if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF)
+    return new TextDecoder('utf-8', { fatal: false }).decode(bytes.subarray(3))
+  let utf = '', win = ''
+  try { utf = new TextDecoder('utf-8', { fatal: false }).decode(bytes) } catch (e) { utf = '' }
+  try { win = new TextDecoder('windows-1252').decode(bytes) } catch (e) { win = '' }
+  if (!utf) return win || ''
+  if (!win) return utf
+  let badUtf = 0; for (let i = 0; i < utf.length; i++) if (utf.charCodeAt(i) === 0xFFFD) badUtf++
+  let moji = 0; for (let i = 0; i < win.length; i++) { const c = win.charCodeAt(i); if (c === 0xC3 || c === 0xC2) moji++ }
+  return moji > badUtf ? utf : win
 }
