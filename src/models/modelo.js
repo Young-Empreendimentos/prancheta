@@ -7,11 +7,14 @@ export function novoModeloBase(cidade = '', uf = '') {
     id: 'm' + Math.abs(hash(cidade + uf + Math.round(performance.now()))),
     cidade, uf,
     nome: (cidade && uf) ? `${cidade}/${uf}` : (cidade || 'Novo modelo'),
+    loteamento: '',                                            // nome do loteamento (puxado direto no memorial)
+    municipio: (cidade && uf) ? `${cidade}/${uf}` : '',        // município (puxado direto no memorial)
     marcos: { exige: true },                                   // exige pontos numerados?
     angulo: 'azimute',                                         // 'azimute' | 'rumo' | 'ambos'
     coordenadas: { incluir: false, sistema: 'local' },         // incluir N/E de cada vértice? local | utm
     secoes: { lotes: true, gleba: true, publicas: true, quadro: true },
     word: { fonte: 'Times New Roman', tamanhoPt: 12, margemCm: 2.5, titulo: 'MEMORIAL DESCRITIVO' },
+    confrontacoes: [],  // confrontações de limite reutilizáveis (ex.: "Terras de Fulano", "Estrada Municipal")
     desc: descPadrao(),
   }
 }
@@ -55,6 +58,8 @@ function descPadrao() {
 export function modeloAlegrete() {
   const m = novoModeloBase('Alegrete', 'RS')
   m.id = 'alegrete-rs'
+  m.loteamento = 'Novo Alegrete'
+  m.municipio = 'Alegrete/RS'
   return m
 }
 

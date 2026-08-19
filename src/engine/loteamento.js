@@ -134,6 +134,10 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
   const ruaObjs = texts.map(t => { const n = normVia(t.text); return n ? { name: n, x: t.x, y: t.y } : null }).filter(Boolean)
   const labels = texts.filter(t => /^LOTE\s*\d+/i.test(t.text))
   const streets = [...new Set(ruaObjs.map(r => r.name))].sort()
+  // textos livres da planta = candidatos a confrontação de limite (nomes de vizinhos, notas de divisa…);
+  // exclui marcos, LOTE/QUADRA, cotas/áreas/azimutes e as vias (já ofertadas à parte)
+  const textosLivres = [...new Set(texts.map(t => t.text.replace(/\s+/g, ' ').trim())
+    .filter(s => s && s.length >= 3 && !/^\d/.test(s) && !/^LOTE\s*\d/i.test(s) && !/QUADRA|^Q\s*\d/i.test(s) && !/^(ÁREA|AREA)\b/i.test(s) && !/m²|°|^A=/i.test(s) && !normVia(s)))].sort()
 
   const polys = sources.polys.filter(p => lotLayer === '__all__' || p.layer === lotLayer)
   const cand = []
@@ -249,7 +253,7 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
     }
   }
 
-  return { model, sources, lots, areaObjs, ruaObjs, streets, allSides, numTexts, lotLayer, numeracao, marcosMap, marcos }
+  return { model, sources, lots, areaObjs, ruaObjs, streets, textosLivres, allSides, numTexts, lotLayer, numeracao, marcosMap, marcos }
 }
 
 export function lotMemorial(lot, { loteamento = '—', municipio = '—', modelo = modeloAlegrete() } = {}) {

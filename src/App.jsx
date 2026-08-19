@@ -8,7 +8,7 @@ import Modal from './components/Modal.jsx'
 import Viewer from './components/Viewer.jsx'
 import ModelosPage from './components/ModelosPage.jsx'
 import MarcosPage from './components/MarcosPage.jsx'
-import { listModelos, getModelo } from './models/modelo.js'
+import { listModelos, getModelo, saveModelo } from './models/modelo.js'
 import { QuadroAreasPanel, GlebaPanel, ViasAreasPanel, ConferenciaPanel } from './components/panels.jsx'
 
 export default function App() {
@@ -20,14 +20,14 @@ export default function App() {
   const [modal, setModal] = useState(null)
   const [erro, setErro] = useState('')
   const [exporting, setExporting] = useState(false)
-  const [loteamento, setLoteamento] = useState('Novo Alegrete')
-  const [municipio, setMunicipio] = useState('Alegrete/RS')
   const [view, setView] = useState('memorial')
   const [numeracao, setNumeracaoState] = useState('dxf')
   const [dxfRaw, setDxfRaw] = useState('')
   const [modelos, setModelos] = useState(() => listModelos())
   const [modeloId, setModeloId] = useState('alegrete-rs')
   const modelo = useMemo(() => getModelo(modeloId), [modeloId, modelos])
+  const loteamento = modelo.loteamento || '—'   // puxado do modelo (editável em ⚙ Modelos, não aqui)
+  const municipio = modelo.municipio || '—'
   const opts = { loteamento, municipio, modelo }
 
   function setNumeracao(mode) {
@@ -57,8 +57,14 @@ export default function App() {
   function onSideSelect(sk, v) {
     if (!v) return resolveSide(sk, null)
     if (v.startsWith('rua|')) return resolveSide(sk, 'rua', v.slice(4))
+    if (v.startsWith('conf|')) return resolveSide(sk, 'livre', v.slice(5))
     if (v.startsWith('lote|')) { const n = prompt('Confronta qual lote? (ex.: Lote 12)'); if (n) resolveSide(sk, 'livre', /lote/i.test(n) ? n.trim() : 'Lote ' + n.trim()) }
-    else { const t = prompt('Descreva a confrontação:'); if (t) resolveSide(sk, 'livre', t.trim()) }
+    else { const t = prompt('Descreva a confrontação (fica salva no modelo da cidade para reusar):'); if (t) { const val = t.trim(); addConfrontacao(val); resolveSide(sk, 'livre', val) } }
+  }
+  function addConfrontacao(val) {
+    if (!val || (modelo.confrontacoes || []).includes(val)) return
+    saveModelo({ ...modelo, confrontacoes: [...(modelo.confrontacoes || []), val] })
+    setModelos(listModelos())
   }
   async function onExport() {
     if (!state) return
@@ -89,13 +95,13 @@ export default function App() {
       <header className="topbar">
         <div className="brand"><span className="mark">📐</span><span className="name">Prancheta</span><span className="tag">memorial de loteamento · Young</span></div>
         <div className="actions">
-          <label className="fields-inline">Loteamento <input value={loteamento} onChange={e => setLoteamento(e.target.value)} /></label>
-          <label className="fields-inline">Município <input value={municipio} onChange={e => setMunicipio(e.target.value)} /></label>
-          <label className="fields-inline">Modelo
+          <label className="fields-inline">Modelo (cidade)
             <select value={modeloId} onChange={e => setModeloId(e.target.value)}>
               {modelos.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
             </select>
           </label>
+          <div className="fields-inline">Loteamento <span className="field-ro">{loteamento}</span></div>
+          <div className="fields-inline">Município <span className="field-ro">{municipio}</span></div>
           <button className="btn" onClick={() => setView('modelos')}>⚙ Modelos</button>
           <button className="btn" onClick={() => setView('marcos')}>◉ Marcos</button>
           {state && <>
@@ -172,9 +178,11 @@ export default function App() {
                           <td className={'cf ' + s.kind}>
                             {(s.kind === 'wd' || s.kind === 'rua' || s.kind === 'livre' || s.kind === 'perimetro') ? (
                               <span className="side-edit">
-                                <select value={s.kind === 'rua' ? 'rua|' + s.val : ''} onChange={e => onSideSelect(s.sk, e.target.value)}>
-                                  <option value="">— a definir —</option>
-                                  <optgroup label="Ruas do desenho">{state.streets.map(r => <option key={r} value={'rua|' + r}>{r}</option>)}</optgroup>
+                                <select value={s.kind === 'rua' ? 'rua|' + s.val : (s.kind === 'livre' ? 'conf|' + s.val : '')} onChange={e => onSideSelect(s.sk, e.target.value)}>
+                                  <option value="">{s.kind === 'perimetro' ? '— limite (definir vizinho) —' : '— a definir —'}</option>
+                                  {(modelo.confrontacoes || []).length > 0 && <optgroup label="Confrontações do modelo">{modelo.confrontacoes.map(c => <option key={'c' + c} value={'conf|' + c}>{c}</option>)}</optgroup>}
+                                  {(state.textosLivres || []).length > 0 && <optgroup label="Textos da planta">{state.textosLivres.map(c => <option key={'t' + c} value={'conf|' + c}>{c.length > 44 ? c.slice(0, 44) + '…' : c}</option>)}</optgroup>}
+                                  <optgroup label="Ruas / avenidas">{state.streets.map(r => <option key={'r' + r} value={'rua|' + r}>{r}</option>)}</optgroup>
                                   <option value="lote|">confronta outro Lote…</option>
                                   <option value="outro|">outro (digitar)…</option>
                                 </select>

@@ -31,6 +31,7 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-ui);
 .actions{display:flex;align-items:center;gap:8px;margin-left:auto;flex-wrap:wrap}
 .fields-inline{display:flex;flex-direction:column;gap:2px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
 .fields-inline input{font-family:var(--font-ui);font-size:13px;background:var(--elev);color:var(--text);border:1px solid var(--border-strong);border-radius:6px;padding:5px 8px;min-width:130px}
+.fields-inline .field-ro{font-family:var(--font-ui);font-size:13px;color:var(--text);font-weight:600;padding:5px 2px;text-transform:none;letter-spacing:0}
 .btn{font-family:var(--font-ui);font-size:13px;color:var(--text);background:var(--elev);border:1px solid var(--border-strong);border-radius:var(--radius-sm);padding:8px 13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:background .12s,border-color .12s}
 .btn:hover{border-color:var(--accent);background:var(--accent-soft)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
@@ -71,6 +72,12 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-ui);
 .mf-row{display:flex;gap:12px}.mf-row .mf{flex:1;min-width:0}
 .mf-check{display:flex;align-items:center;gap:8px;font-size:13.5px;margin-bottom:8px;cursor:pointer}
 .mod-preview{font-family:var(--font-mono);font-size:12px;line-height:1.65;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;white-space:pre-wrap;color:var(--text)}
+.conf-add{display:flex;gap:8px;margin-bottom:10px}
+.conf-add input{flex:1;font-family:var(--font-ui);font-size:13px;background:var(--elev);color:var(--text);border:1px solid var(--border-strong);border-radius:6px;padding:7px 9px}
+.conf-list{display:flex;flex-wrap:wrap;gap:7px}
+.conf-chip{display:inline-flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--border);border-radius:999px;padding:4px 6px 4px 11px;font-size:12.5px}
+.conf-chip button{border:none;background:var(--border);color:var(--text);border-radius:50%;width:17px;height:17px;line-height:1;cursor:pointer;font-size:12px}
+.conf-chip button:hover{background:var(--danger);color:#fff}
 @media (max-width:900px){.mod-grid{grid-template-columns:1fr}.mod-list{width:180px}}
 
 /* ---- página de Marcos (numeração de pontos) ---- */

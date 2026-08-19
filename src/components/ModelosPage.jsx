@@ -22,6 +22,7 @@ export default function ModelosPage({ onClose }) {
   const [selId, setSelId] = useState(modelos[0]?.id)
   const [draft, setDraft] = useState(() => structuredClone(modelos[0]))
   const [dirty, setDirty] = useState(false)
+  const [novaConf, setNovaConf] = useState('')
 
   function pick(id) {
     const m = modelos.find(x => x.id === id)
@@ -36,6 +37,8 @@ export default function ModelosPage({ onClose }) {
   const updConf = patch => { setDraft(d => ({ ...d, desc: { ...d.desc, conf: { ...d.desc.conf, ...patch } } })); setDirty(true) }
   const updWord = patch => { setDraft(d => ({ ...d, word: { ...d.word, ...patch } })); setDirty(true) }
   const updSec = patch => { setDraft(d => ({ ...d, secoes: { ...d.secoes, ...patch } })); setDirty(true) }
+  const addConf = () => { const v = novaConf.trim(); if (!v || (draft.confrontacoes || []).includes(v)) return; setDraft(d => ({ ...d, confrontacoes: [...(d.confrontacoes || []), v] })); setDirty(true); setNovaConf('') }
+  const rmConf = v => { setDraft(d => ({ ...d, confrontacoes: (d.confrontacoes || []).filter(x => x !== v) })); setDirty(true) }
 
   function salvar() {
     const m = { ...draft, nome: draft.nome || (draft.cidade && draft.uf ? `${draft.cidade}/${draft.uf}` : draft.cidade || 'Modelo') }
@@ -97,9 +100,9 @@ export default function ModelosPage({ onClose }) {
         <div className="mod-grid">
           <section className="mod-card">
             <h3>Identificação</h3>
-            <Field label="Cidade"><input value={draft.cidade} onChange={e => upd({ cidade: e.target.value })} /></Field>
-            <Field label="UF"><input value={draft.uf} maxLength={2} onChange={e => upd({ uf: e.target.value.toUpperCase() })} /></Field>
             <Field label="Nome do modelo"><input value={draft.nome} onChange={e => upd({ nome: e.target.value })} placeholder="ex.: Alegrete/RS" /></Field>
+            <Field label="Loteamento" hint="puxado direto no memorial"><input value={draft.loteamento || ''} onChange={e => upd({ loteamento: e.target.value })} placeholder="ex.: Novo Alegrete" /></Field>
+            <Field label="Município" hint="puxado direto no memorial"><input value={draft.municipio || ''} onChange={e => upd({ municipio: e.target.value })} placeholder="ex.: Alegrete/RS" /></Field>
           </section>
 
           <section className="mod-card">
@@ -156,6 +159,18 @@ export default function ModelosPage({ onClose }) {
               <Field label="Medida (rumo)"><input value={d.medidaRumo} onChange={e => updDesc({ medidaRumo: e.target.value })} /></Field>
             </div>
             <Field label="Fechamento"><input value={d.fechamento} onChange={e => updDesc({ fechamento: e.target.value })} /></Field>
+          </section>
+
+          <section className="mod-card wide">
+            <h3>Confrontações de limite <span className="vars">vizinhos/avenidas recorrentes desta cidade — aparecem no dropdown dos lados de limite</span></h3>
+            <div className="conf-add">
+              <input value={novaConf} onChange={e => setNovaConf(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addConf() }} placeholder="ex.: Terras de João Silva · Estrada Municipal · Arroio do Salso" />
+              <button className="btn sm" onClick={addConf}>Adicionar</button>
+            </div>
+            <div className="conf-list">
+              {(draft.confrontacoes || []).length === 0 ? <span className="mf-h">Nenhuma cadastrada ainda.</span>
+                : draft.confrontacoes.map(c => <span key={c} className="conf-chip">{c}<button onClick={() => rmConf(c)} title="remover">×</button></span>)}
+            </div>
           </section>
 
           <section className="mod-card wide">
