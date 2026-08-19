@@ -6,6 +6,8 @@ import { toGMS, quadAbbr } from './engine/geometry.js'
 import { exportMemoriaisDocx } from './export/docx.js'
 import Modal from './components/Modal.jsx'
 import Viewer from './components/Viewer.jsx'
+import ModelosPage from './components/ModelosPage.jsx'
+import { listModelos, getModelo } from './models/modelo.js'
 import { QuadroAreasPanel, GlebaPanel, ViasAreasPanel, ConferenciaPanel } from './components/panels.jsx'
 
 export default function App() {
@@ -19,7 +21,11 @@ export default function App() {
   const [exporting, setExporting] = useState(false)
   const [loteamento, setLoteamento] = useState('Novo Alegrete')
   const [municipio, setMunicipio] = useState('Alegrete/RS')
-  const opts = { loteamento, municipio }
+  const [view, setView] = useState('memorial')
+  const [modelos, setModelos] = useState(() => listModelos())
+  const [modeloId, setModeloId] = useState('alegrete-rs')
+  const modelo = useMemo(() => getModelo(modeloId), [modeloId, modelos])
+  const opts = { loteamento, municipio, modelo }
 
   async function onFile(e) {
     const f = e.target.files[0]; if (!f) return
@@ -48,7 +54,7 @@ export default function App() {
   async function onExport() {
     if (!state) return
     setExporting(true)
-    try { await exportMemoriaisDocx(state, { loteamento, municipio, glebaConf }) }
+    try { await exportMemoriaisDocx(state, { loteamento, municipio, glebaConf, modelo }) }
     catch (err) { setErro('Falha ao gerar o Word: ' + err.message) }
     setExporting(false)
   }
@@ -57,6 +63,12 @@ export default function App() {
   const nPend = state ? state.lots.reduce((a, l) => a + l.pend, 0) : 0
   const lot = state && sel >= 0 ? state.lots[sel] : null
 
+  if (view === 'modelos') return (
+    <div className="app">
+      <ModelosPage onClose={() => { setModelos(listModelos()); setView('memorial') }} />
+    </div>
+  )
+
   return (
     <div className="app">
       <header className="topbar">
@@ -64,6 +76,12 @@ export default function App() {
         <div className="actions">
           <label className="fields-inline">Loteamento <input value={loteamento} onChange={e => setLoteamento(e.target.value)} /></label>
           <label className="fields-inline">Município <input value={municipio} onChange={e => setMunicipio(e.target.value)} /></label>
+          <label className="fields-inline">Modelo
+            <select value={modeloId} onChange={e => setModeloId(e.target.value)}>
+              {modelos.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
+            </select>
+          </label>
+          <button className="btn" onClick={() => setView('modelos')}>⚙ Modelos</button>
           {state && <>
             <button className="btn" onClick={() => setModal('conferencia')}>Conferência</button>
             <button className="btn" onClick={() => setModal('quadro')}>Quadro de áreas</button>

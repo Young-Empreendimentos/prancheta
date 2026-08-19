@@ -1,10 +1,31 @@
 // Motor do loteamento: detecção de lotes, confrontações automáticas (lote/área/rua), memoriais,
 // quadro de áreas, gleba e áreas públicas. Portado e validado no protótipo (determinístico, sem IA).
 import {
-  signedArea, dist, azimuth, toGMS, quad, pip, reversePoly, arcInfo, areaWithArcs,
+  signedArea, dist, azimuth, toGMS, quad, toRumo, pip, reversePoly, arcInfo, areaWithArcs,
   keyPt, sideKey, centroid,
 } from './geometry.js'
 import { areaExtenso, nb } from './extenso.js'
+import { modeloAlegrete, render } from '../models/modelo.js'
+
+// cláusula de medida (azimute / rumo / ambos / arco) conforme o modelo
+function medida(modelo, sd) {
+  const d = modelo.desc
+  if (sd.arc && sd.arc.arc) return render(d.medidaArco, { dir: sd.arc.dir, raio: nb(sd.arc.raio, 2), desenv: nb(sd.arc.desenv, 2) })
+  const vars = { az: toGMS(sd.az), quad: quad(sd.az), rumo: toRumo(sd.az), dist: nb(sd.dist, 2) }
+  if (modelo.angulo === 'rumo') return render(d.medidaRumo, vars)
+  if (modelo.angulo === 'ambos') return render(d.medidaAmbos, vars)
+  return render(d.medidaAz, vars)
+}
+// cláusula de confrontação conforme o tipo de lado e o modelo
+function confClause(modelo, sd) {
+  const c = modelo.desc.conf
+  if (sd.kind === 'rua') return render(c.rua, { c: sd.conf })
+  if (sd.kind === 'lote') return render(c.lote, { c: sd.conf })
+  if (sd.kind === 'area') return render(c.area, { c: sd.conf })
+  if (sd.kind === 'perimetro') return render(c.perimetro, { c: sd.val || '[limite do loteamento — definir vizinho]' })
+  if (sd.kind === 'wd') return c.wd
+  return render(c.lote, { c: sd.conf })
+}
 
 function insertTf(e, parent, blocks) {
   const c = Math.cos((e.rot || 0) * Math.PI / 180), s = Math.sin((e.rot || 0) * Math.PI / 180)
@@ -175,22 +196,16 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
   return { model, sources, lots, areaObjs, ruaObjs, streets, allSides, numTexts, lotLayer }
 }
 
-export function lotMemorial(lot, { loteamento = '—', municipio = '—' } = {}) {
-  let s = 'Lote ' + lot.num + ': Um terreno urbano localizado no Loteamento "' + loteamento + '", no município de ' + municipio + ', situado na Quadra ' + String(lot.quadra).padStart(2, '0') + ', com as seguintes medidas e confrontações em sentido horário: '
-  s += 'Partindo do ponto ' + lot.sides[0].from + '; '
+export function lotMemorial(lot, { loteamento = '—', municipio = '—', modelo = modeloAlegrete() } = {}) {
+  const d = modelo.desc, comMarco = modelo.marcos.exige !== false
+  let s = render(d.cabecalho, { num: lot.num, loteamento, municipio, quadra: String(lot.quadra).padStart(2, '0'), sentido: d.sentido })
+  s += comMarco ? render(d.partida, { p0: lot.sides[0].from }) : d.partidaSemMarco
   lot.sides.forEach((sd, k) => {
-    let c
-    if (sd.kind === 'lote') c = 'confrontando com o ' + sd.conf
-    else if (sd.kind === 'area') c = 'confrontando com a ' + sd.conf
-    else if (sd.kind === 'rua') c = 'no alinhamento com a ' + sd.conf
-    else if (sd.kind === 'perimetro') c = 'confrontando com ' + (sd.val || '[limite do loteamento — definir vizinho]')
-    else if (sd.kind === 'wd') c = 'confrontando com [A DEFINIR]'
-    else c = 'confrontando com ' + sd.conf
-    if (sd.arc.arc) s += 'deste ponto segue ' + c + ', por uma curva à ' + sd.arc.dir + ' com raio de ' + nb(sd.arc.raio, 2) + ' m e desenvolvimento de ' + nb(sd.arc.desenv, 2) + ' m, até o ponto ' + sd.to
-    else s += 'deste ponto segue ' + c + ', com azimute de ' + toGMS(sd.az) + ', sentido ' + quad(sd.az) + ' e distância de ' + nb(sd.dist, 2) + ' m, até o ponto ' + sd.to
-    s += (k === lot.sides.length - 1) ? ', ponto inicial da descrição deste perímetro; ' : '; '
+    const ate = comMarco ? render(d.ate, { to: sd.to }) : d.ateSemMarco
+    s += d.conector + confClause(modelo, sd) + medida(modelo, sd) + ate
+    s += (k === lot.sides.length - 1) ? d.encerra + d.sep : d.sep
   })
-  s += 'perfazendo uma área total de ' + nb(lot.area, 2) + ' m² (' + areaExtenso(lot.area) + ').'
+  s += render(d.fechamento, { area: nb(lot.area, 2), extenso: areaExtenso(lot.area) })
   return s
 }
 
@@ -222,32 +237,33 @@ export function buildGleba(state) {
   for (let i = 0; i < vs.length; i++) { const j = (i + 1) % vs.length; sides.push({ i, from: pts[i], to: pts[j], az: azimuth(vs[i], vs[j]), dist: dist(vs[i], vs[j]), arc: arcInfo(vs[i], vs[j], bg[i] || 0) }) }
   return { verts: vs, pts, sides, area: areaWithArcs(vs, bg) }
 }
-export function glebaMemorial(gleba, conf, { loteamento = '—', municipio = '—' } = {}) {
-  let s = 'Gleba de terras com área de ' + nb(gleba.area, 2) + ' m² (' + areaExtenso(gleba.area) + '), situada no município de ' + municipio + ', destinada ao Loteamento "' + loteamento + '", com o seguinte perímetro, no sentido horário: Inicia-se a descrição no marco ' + gleba.sides[0].from + '; '
+export function glebaMemorial(gleba, conf, { loteamento = '—', municipio = '—', modelo = modeloAlegrete() } = {}) {
+  const d = modelo.desc
+  let s = render(d.glebaCabecalho, { area: nb(gleba.area, 2), extenso: areaExtenso(gleba.area), municipio, loteamento, sentido: d.sentido, p0: gleba.sides[0].from })
   gleba.sides.forEach((sd, k) => {
-    const cf = conf[sd.i] || '[confrontante a definir]'
-    if (sd.arc.arc) s += 'deste ponto segue confrontando com ' + cf + ', por uma curva à ' + sd.arc.dir + ' com raio de ' + nb(sd.arc.raio, 2) + ' m e desenvolvimento de ' + nb(sd.arc.desenv, 2) + ' m, até o marco ' + sd.to
-    else s += 'deste ponto segue confrontando com ' + cf + ', com azimute de ' + toGMS(sd.az) + ', sentido ' + quad(sd.az) + ' e distância de ' + nb(sd.dist, 2) + ' m, até o marco ' + sd.to
-    s += (k === gleba.sides.length - 1) ? ', marco inicial desta descrição, fechando o perímetro.' : '; '
+    const c = render(d.glebaConf, { c: conf[sd.i] || '[confrontante a definir]' })
+    s += d.conector + c + medida(modelo, sd) + render(d.glebaAte, { to: sd.to })
+    s += (k === gleba.sides.length - 1) ? d.glebaEncerra : d.sep
   })
   return s
 }
 // memorial de uma área pública (verde/institucional) — confrontações automáticas (lotes/áreas/ruas ao redor)
-export function areaMemorial(ar, state, { loteamento = '—', municipio = '—' } = {}) {
+export function areaMemorial(ar, state, { loteamento = '—', municipio = '—', modelo = modeloAlegrete() } = {}) {
+  const d = modelo.desc
   let vs = ar.verts.slice(), bg = (ar.bulges || []).slice()
   if (signedArea(vs) > 0) { const r = reversePoly(vs, bg); vs = r.v; bg = r.b }
   const pts = vs.map((v, i) => ptNum(v, state.numTexts) || ('M' + (i + 1)))
   const C = centroid(vs), area = areaWithArcs(vs, bg), nome = titleArea(ar.name)
-  let s = nome + ': área pública com ' + nb(area, 2) + ' m² (' + areaExtenso(area) + '), integrante do Loteamento "' + loteamento + '", município de ' + municipio + ', com o seguinte perímetro, no sentido horário: Inicia-se no marco ' + pts[0] + '; '
+  let s = render(d.areaCabecalho, { nome, area: nb(area, 2), extenso: areaExtenso(area), loteamento, municipio, sentido: d.sentido, p0: pts[0] })
   for (let i = 0; i < vs.length; i++) {
     const j = (i + 1) % vs.length, o = confront(vs[i], vs[j], ar, state.allSides), bl = bg[i] || 0, ai = arcInfo(vs[i], vs[j], bl)
     let cf
-    if (o && o.lot) cf = 'confrontando com o Lote ' + o.lot.num + (o.lot.quadra !== '?' ? (' (Quadra ' + String(o.lot.quadra).padStart(2, '0') + ')') : '')
-    else if (o && o.area) cf = 'confrontando com a ' + titleArea(o.area.name)
-    else { const r = guessStreet(vs[i], vs[j], C, state.ruaObjs); cf = r ? ('no alinhamento com a ' + r) : 'confrontando com [a definir]' }
-    if (ai.arc) s += 'deste ponto segue ' + cf + ', por uma curva à ' + ai.dir + ' com raio de ' + nb(ai.raio, 2) + ' m e desenvolvimento de ' + nb(ai.desenv, 2) + ' m, até o marco ' + pts[j]
-    else s += 'deste ponto segue ' + cf + ', com azimute de ' + toGMS(azimuth(vs[i], vs[j])) + ', sentido ' + quad(azimuth(vs[i], vs[j])) + ' e distância de ' + nb(dist(vs[i], vs[j]), 2) + ' m, até o marco ' + pts[j]
-    s += (j === 0) ? ', marco inicial, fechando o perímetro.' : '; '
+    if (o && o.lot) cf = render(d.conf.lote, { c: 'Lote ' + o.lot.num + (o.lot.quadra !== '?' ? (' (Quadra ' + String(o.lot.quadra).padStart(2, '0') + ')') : '') })
+    else if (o && o.area) cf = render(d.conf.area, { c: titleArea(o.area.name) })
+    else { const r = guessStreet(vs[i], vs[j], C, state.ruaObjs); cf = r ? render(d.conf.rua, { c: r }) : render(d.conf.perimetro, { c: '[a definir]' }) }
+    const sd = { az: azimuth(vs[i], vs[j]), dist: dist(vs[i], vs[j]), arc: ai }
+    s += d.conector + cf + medida(modelo, sd) + render(d.glebaAte, { to: pts[j] })
+    s += (j === 0) ? d.areaEncerra : d.sep
   }
   return { nome, area, text: s }
 }

@@ -18,6 +18,12 @@ export function toGMS(d) {
   return g + '°' + String(m).padStart(2, '0') + "'" + String(s).padStart(2, '0') + '"'
 }
 export function quad(az) { if (az < 90) return 'nordeste'; if (az < 180) return 'sudeste'; if (az < 270) return 'sudoeste'; return 'noroeste' }
+// rumo: quadrante (NE/SE/SW/NW) + ângulo agudo medido a partir do N ou do S
+export function toRumo(az) {
+  let q, a
+  if (az <= 90) { q = 'NE'; a = az } else if (az <= 180) { q = 'SE'; a = 180 - az } else if (az <= 270) { q = 'SW'; a = az - 180 } else { q = 'NW'; a = 360 - az }
+  return q + ' ' + toGMS(a)
+}
 export function quadAbbr(az) { if (az < 90) return 'NE'; if (az < 180) return 'SE'; if (az < 270) return 'SO'; return 'NO' }
 
 export function pip(pt, vs) {

@@ -1,0 +1,87 @@
+// Modelo de memorial por cidade/cartório. DETERMINÍSTICO: define COMO a descrição sai.
+// O modelo de Alegrete reproduz exatamente o memorial validado contra o cartório.
+// A arquiteta cria um modelo por cidade (as "definições da descrição"); a geração e o Word leem daqui.
+
+export function novoModeloBase(cidade = '', uf = '') {
+  return {
+    id: 'm' + Math.abs(hash(cidade + uf + Math.round(performance.now()))),
+    cidade, uf,
+    nome: (cidade && uf) ? `${cidade}/${uf}` : (cidade || 'Novo modelo'),
+    marcos: { exige: true },                                   // exige pontos numerados?
+    angulo: 'azimute',                                         // 'azimute' | 'rumo' | 'ambos'
+    coordenadas: { incluir: false, sistema: 'local' },         // incluir N/E de cada vértice? local | utm
+    secoes: { lotes: true, gleba: true, publicas: true, quadro: true },
+    word: { fonte: 'Times New Roman', tamanhoPt: 12, margemCm: 2.5, titulo: 'MEMORIAL DESCRITIVO' },
+    desc: descPadrao(),
+  }
+}
+
+function descPadrao() {
+  return {
+    sentido: 'horário',
+    conector: 'deste ponto segue ',
+    cabecalho: 'Lote {num}: Um terreno urbano localizado no Loteamento "{loteamento}", no município de {municipio}, situado na Quadra {quadra}, com as seguintes medidas e confrontações em sentido {sentido}: ',
+    partida: 'Partindo do ponto {p0}; ',
+    partidaSemMarco: 'Inicia-se a descrição pela frente do lote, ',
+    conf: {
+      rua: 'no alinhamento com a {c}',
+      lote: 'confrontando com o {c}',
+      area: 'confrontando com a {c}',
+      perimetro: 'confrontando com {c}',
+      wd: 'confrontando com [A DEFINIR]',
+    },
+    medidaAz: ', com azimute de {az}, sentido {quad} e distância de {dist} m',
+    medidaRumo: ', com rumo de {rumo} e distância de {dist} m',
+    medidaAmbos: ', com azimute de {az} (rumo {rumo}) e distância de {dist} m',
+    medidaArco: ', por uma curva à {dir} com raio de {raio} m e desenvolvimento de {desenv} m',
+    coord: ' (N {N} m, E {E} m)',                              // anexado ao ponto de chegada, se coordenadas.incluir
+    ate: ', até o ponto {to}',
+    ateSemMarco: '',
+    encerra: ', ponto inicial da descrição deste perímetro',
+    sep: '; ',
+    fechamento: 'perfazendo uma área total de {area} m² ({extenso}).',
+    // gleba (perímetro)
+    glebaCabecalho: 'Gleba de terras com área de {area} m² ({extenso}), situada no município de {municipio}, destinada ao Loteamento "{loteamento}", com o seguinte perímetro, no sentido {sentido}: Inicia-se a descrição no marco {p0}; ',
+    glebaConf: 'confrontando com {c}',
+    glebaAte: ', até o marco {to}',
+    glebaEncerra: ', marco inicial desta descrição, fechando o perímetro.',
+    // área pública
+    areaCabecalho: '{nome}: área pública com {area} m² ({extenso}), integrante do Loteamento "{loteamento}", município de {municipio}, com o seguinte perímetro, no sentido {sentido}: Inicia-se no marco {p0}; ',
+    areaEncerra: ', marco inicial, fechando o perímetro.',
+  }
+}
+
+// Modelo semente: Alegrete/RS (o que já foi validado). É o modelo padrão até a arquiteta criar outros.
+export function modeloAlegrete() {
+  const m = novoModeloBase('Alegrete', 'RS')
+  m.id = 'alegrete-rs'
+  return m
+}
+
+// substitui {token} por vars[token] (string vazia se ausente)
+export function render(tpl, vars) {
+  return String(tpl || '').replace(/\{(\w+)\}/g, (_, k) => (vars[k] != null ? String(vars[k]) : ''))
+}
+
+function hash(s) { let h = 0; for (let i = 0; i < s.length; i++) { h = (h << 5) - h + s.charCodeAt(i); h |= 0 } return h }
+
+// ---- persistência (localStorage; pode migrar p/ Supabase depois, sem mudar o resto) ----
+const KEY = 'prancheta-modelos'
+export function listModelos() {
+  let arr = []
+  try { arr = JSON.parse(localStorage.getItem(KEY) || '[]') } catch { arr = [] }
+  if (!arr.some(m => m.id === 'alegrete-rs')) arr = [modeloAlegrete(), ...arr]
+  return arr
+}
+export function saveModelo(m) {
+  const arr = listModelos().filter(x => x.id !== m.id)
+  arr.push(m)
+  localStorage.setItem(KEY, JSON.stringify(arr))
+  return arr
+}
+export function deleteModelo(id) {
+  const arr = listModelos().filter(x => x.id !== id)
+  localStorage.setItem(KEY, JSON.stringify(arr))
+  return arr
+}
+export function getModelo(id) { return listModelos().find(m => m.id === id) || modeloAlegrete() }
