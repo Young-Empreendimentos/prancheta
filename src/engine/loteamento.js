@@ -194,9 +194,10 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
       else if (resolutions[sk]) { kind = resolutions[sk].kind; val = resolutions[sk].val; conf = val }
       else {
         const r = guessStreet(vs[i], vs[j], C, ruaObjs)
+        // lado sem lote/área vizinho e sem rua à frente = LIMITE do loteamento (operador define o vizinho externo).
+        // vale tanto p/ borda confirmada (coincide com a gleba) quanto p/ borda sem gleba desenhada (ex.: Guaíba).
         if (r) { kind = 'rua'; val = r; conf = r; auto = true }
-        else if (glebaEdges.some(e => segOverlap(vs[i], vs[j], e[0], e[1]) > 0.8)) { kind = 'perimetro'; conf = '(limite do loteamento)' }
-        else { conf = '(a definir)'; kind = 'wd' }
+        else { kind = 'perimetro'; conf = '(limite do loteamento)'; auto = glebaEdges.some(e => segOverlap(vs[i], vs[j], e[0], e[1]) > 0.8) }
       }
       lot.sides.push({ idx: i, sk, from: lot.pts[i], to: lot.pts[j], az: azimuth(vs[i], vs[j]), dist: dist(vs[i], vs[j]), bulge: bl, arc: ai, conf, kind, val, auto })
     }
@@ -213,7 +214,7 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
     lot.frente = front ? front.conf : null
     lot.area = areaWithArcs(vs, bg)
     lot.perim = lot.sides.reduce((a, s) => a + (s.arc.arc ? s.arc.desenv : s.dist), 0)
-    lot.pend = lot.sides.filter(s => s.kind === 'wd').length
+    lot.pend = lot.sides.filter(s => s.kind === 'wd' || s.kind === 'perimetro').length
     const iss = []
     if (lot.num === '?') iss.push('sem número de lote')
     if (lot.pts.some(p => /^P\d/.test(p))) iss.push('vértice sem marco numerado')

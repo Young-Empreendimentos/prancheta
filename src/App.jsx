@@ -170,7 +170,7 @@ export default function App() {
                         <tr key={k}>
                           <td className="v">{s.from}→{s.to}</td>
                           <td className={'cf ' + s.kind}>
-                            {(s.kind === 'wd' || s.kind === 'rua' || s.kind === 'livre') ? (
+                            {(s.kind === 'wd' || s.kind === 'rua' || s.kind === 'livre' || s.kind === 'perimetro') ? (
                               <span className="side-edit">
                                 <select value={s.kind === 'rua' ? 'rua|' + s.val : ''} onChange={e => onSideSelect(s.sk, e.target.value)}>
                                   <option value="">— a definir —</option>
