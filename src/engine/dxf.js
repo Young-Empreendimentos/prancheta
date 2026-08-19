@@ -38,7 +38,17 @@ function polyData(g) {
   }
   return { v, b }
 }
-function cleanM(s) { return (s || '').replace(/\\P/g, ' ').replace(/\\~/g, ' ').replace(/\\[A-Za-z][^;\\]*;?/g, '').replace(/[{}]/g, '').trim() }
+// limpa texto de TEXT/MTEXT do DXF: decodifica acentos (\U+XXXX) ANTES de mexer nos códigos MTEXT,
+// e só remove código de formatação que termina em ';' (senão comeria o texto após o \U+).
+function cleanM(s) {
+  return (s || '')
+    .replace(/\\U\+([0-9A-Fa-f]{4})/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/\\P/g, ' ').replace(/\\~/g, ' ')
+    .replace(/\\[A-Za-z][^;\\]*;/g, '')
+    .replace(/\\[LlOoKkNnXx]/g, '')
+    .replace(/%%[dD]/g, '°').replace(/%%[pP]/g, '±').replace(/%%[cC]/g, 'Ø').replace(/%%[uUoO]/g, '')
+    .replace(/[{}]/g, '').replace(/\s+/g, ' ').trim()
+}
 function interpret(type, g) {
   const layer = gs(g, 8) || '0', color = gn(g, 62)
   switch (type) {
@@ -47,7 +57,7 @@ function interpret(type, g) {
     case 'CIRCLE': return { type: 'circle', layer, color, cx: gn(g, 10) || 0, cy: gn(g, 20) || 0, r: gn(g, 40) || 0 }
     case 'ARC': return { type: 'arc', layer, color, cx: gn(g, 10) || 0, cy: gn(g, 20) || 0, r: gn(g, 40) || 0, a1: gn(g, 50) || 0, a2: gn(g, 51) || 0 }
     case 'POINT': return { type: 'point', layer, color, x: gn(g, 10) || 0, y: gn(g, 20) || 0 }
-    case 'TEXT': return { type: 'text', layer, color, x: gn(g, 10) || 0, y: gn(g, 20) || 0, h: gn(g, 40) || 1, rot: gn(g, 50) || 0, text: (gs(g, 1) || '').trim() }
+    case 'TEXT': return { type: 'text', layer, color, x: gn(g, 10) || 0, y: gn(g, 20) || 0, h: gn(g, 40) || 1, rot: gn(g, 50) || 0, text: cleanM(gs(g, 1) || '') }
     case 'MTEXT': { let t = ''; for (const p of g) { if (p[0] === 3 || p[0] === 1) t += p[1] } return { type: 'text', layer, color, x: gn(g, 10) || 0, y: gn(g, 20) || 0, h: gn(g, 40) || 1, rot: (gn(g, 50) || 0) * 180 / Math.PI, text: cleanM(t) } }
     case 'INSERT': return { type: 'insert', layer, color, name: gs(g, 2), x: gn(g, 10) || 0, y: gn(g, 20) || 0, sx: gn(g, 41) || 1, sy: gn(g, 42) || 1, rot: gn(g, 50) || 0 }
     default: return null
