@@ -100,6 +100,34 @@ function normVia(raw) {
   return pfx + ' ' + nome
 }
 
+// detecta QUADRAS quando o bloco não traz o nome: agrupa lotes por vizinhança (quem divide divisa =
+// mesma quadra; a rua separa) e rotula cada grupo com o texto "QUADRA nn" que cai nele. Sistema-arquiteta.
+function detectQuadras(lots, texts) {
+  const n = lots.length; if (!n) return
+  const bb = lots.map(l => { let ax = 1e18, ay = 1e18, bx = -1e18, by = -1e18; for (const v of l.verts) { if (v[0] < ax) ax = v[0]; if (v[1] < ay) ay = v[1]; if (v[0] > bx) bx = v[0]; if (v[1] > by) by = v[1] } return [ax, ay, bx, by] })
+  const par = lots.map((_, i) => i); const find = x => { while (par[x] !== x) { par[x] = par[par[x]]; x = par[x] } return x }
+  const touch = (i, j) => bb[i][0] <= bb[j][2] + 0.5 && bb[i][2] >= bb[j][0] - 0.5 && bb[i][1] <= bb[j][3] + 0.5 && bb[i][3] >= bb[j][1] - 0.5
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+    if (find(i) === find(j) || !touch(i, j)) continue
+    const vi = lots[i].verts, vj = lots[j].verts; let adj = false
+    for (let a = 0; a < vi.length && !adj; a++) { const p1 = vi[a], p2 = vi[(a + 1) % vi.length]; for (let b = 0; b < vj.length; b++) { if (segOverlap(p1, p2, vj[b], vj[(b + 1) % vj.length]) > 0.8) { adj = true; break } } }
+    if (adj) par[find(i)] = find(j)
+  }
+  const cents = lots.map(l => centroid(l.verts))
+  const qtxt = texts.filter(t => /QUADRA|^Q\s*\d/i.test(t.text))
+  const votes = {} // raiz do cluster -> { num: contagem }
+  qtxt.forEach(t => { let bi = 0, bd = 1e18; for (let i = 0; i < n; i++) { const d = (cents[i][0] - t.x) ** 2 + (cents[i][1] - t.y) ** 2; if (d < bd) { bd = d; bi = i } } const mm = t.text.match(/\d+/); const num = mm ? String(parseInt(mm[0])) : null; if (num) { const r = find(bi); (votes[r] = votes[r] || {})[num] = (votes[r][num] || 0) + 1 } })
+  // ordena clusters por posição (cima→baixo, esq→dir) p/ numerar os sem texto
+  const roots = [...new Set(lots.map((_, i) => find(i)))]
+  const cxy = r => { const idx = lots.map((_, i) => i).filter(i => find(i) === r); return [idx.reduce((s, i) => s + cents[i][0], 0) / idx.length, idx.reduce((s, i) => s + cents[i][1], 0) / idx.length] }
+  roots.sort((A, B) => { const a = cxy(A), b = cxy(B); return b[1] - a[1] || a[0] - b[0] })
+  const usados = new Set(Object.values(votes).map(v => Object.keys(v).sort((a, b) => v[b] - v[a])[0]))
+  let auto = 0; const nextAuto = () => { do { auto++ } while (usados.has(String(auto))); return String(auto) }
+  const numByRoot = {}
+  roots.forEach(r => { const v = votes[r]; numByRoot[r] = v ? Object.keys(v).sort((a, b) => v[b] - v[a])[0] : nextAuto() })
+  lots.forEach((l, i) => { l.quadra = numByRoot[find(i)] })
+}
+
 export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions = {}, numeracao = 'dxf' } = {}) {
   const texts = sources.texts
   const numTexts = texts.filter(t => /^\d{1,4}$/.test(t.text))
@@ -195,6 +223,12 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
     if (lot.area < 1) iss.push('área quase zero')
     lot.issues = iss; lot.warn = lot.pend > 0 || iss.length > 0
   })
+  // quadra pela GEOMETRIA quando o bloco não trouxe o nome (maioria '?')
+  if (lots.filter(l => l.quadra === '?').length > lots.length * 0.5) {
+    detectQuadras(lots, texts)
+    lots.sort((a, b) => { const qa = parseInt(a.quadra) || 999, qb = parseInt(b.quadra) || 999; if (qa !== qb) return qa - qb; return (parseInt(a.num) || 0) - (parseInt(b.num) || 0) })
+  }
+
   const byQ = {}; lots.forEach(l => { (byQ[l.quadra] = byQ[l.quadra] || []).push(l) })
   Object.values(byQ).forEach(arr => { const a = arr.map(l => l.area).sort((x, y) => x - y); const med = a[Math.floor(a.length / 2)] || 0; arr.forEach(l => { if (med > 0 && (l.area < med * 0.4 || l.area > med * 2.5)) { l.issues.push('área destoa da quadra'); l.warn = true } }) })
 
