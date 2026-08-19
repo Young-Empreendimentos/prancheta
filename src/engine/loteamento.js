@@ -47,17 +47,37 @@ function guessStreet(a, b, C, ruaObjs) {
   const M = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], L = dist(a, b); if (L < 1e-6) return null
   const tx = (b[0] - a[0]) / L, ty = (b[1] - a[1]) / L; let nx = -ty, ny = tx
   if ((M[0] + nx - C[0]) ** 2 + (M[1] + ny - C[1]) ** 2 < (M[0] - C[0]) ** 2 + (M[1] - C[1]) ** 2) { nx = -nx; ny = -ny }
-  let best = null, bs = 1e18
-  for (const r of ruaObjs) { const vx = r.x - M[0], vy = r.y - M[1], out = vx * nx + vy * ny, lat = vx * tx + vy * ty; if (out <= 0 || out > 120) continue; const sc = out + Math.abs(lat) * 0.25; if (sc < bs) { bs = sc; best = r } }
-  return best ? best.name : null
+  // Regra geral (qualquer loteamento): a via do PRÓPRIO loteamento — rótulo DENTRO da gleba — tem
+  // prioridade sobre a via externa que ela continua (ex.: "Rua D-3" interna vence "R. Pedro Honório").
+  // Isso é seguro porque, para um lote de borda que dá p/ via externa, os rótulos internos ficam ATRÁS
+  // (out<0) e nem entram — só competem quando a via interna está realmente à frente.
+  let bIn = null, sIn = 1e18, bOut = null, sOut = 1e18
+  for (const r of ruaObjs) {
+    const vx = r.x - M[0], vy = r.y - M[1], out = vx * nx + vy * ny, lat = vx * tx + vy * ty
+    if (out <= 0 || out > 120) continue
+    const sc = out + Math.abs(lat) * 0.25
+    if (r.inside) { if (sc < sIn) { sIn = sc; bIn = r } } else if (sc < sOut) { sOut = sc; bOut = r }
+  }
+  return bIn ? bIn.name : (bOut ? bOut.name : null)
 }
 const titleArea = s => String(s).toLowerCase().replace(/(^|\s)\S/g, c => c.toUpperCase())
+
+// logradouros (vias) do desenho: RUA, AVENIDA/AV., R.<nome>, TRAVESSA/TV., ESTRADA/ESTR., RODOVIA/ROD., ALAMEDA/AL., CORREDOR, PRAÇA.
+// abreviações exigem ponto (AV., R.) p/ não confundir com outros textos; nomes TODOS em maiúsculo viram Title Case.
+const VIA_RE = /^(?:(RUA|AVENIDA|TRAVESSA|ESTRADA|RODOVIA|ALAMEDA|CORREDOR|PRA[CÇ]A)\b|(AV|R|TV|ESTR|ROD|AL)\.)\s*(.+)$/i
+const VIA_PFX = { RUA: 'Rua', R: 'Rua', AVENIDA: 'Avenida', AV: 'Avenida', TRAVESSA: 'Travessa', TV: 'Travessa', ESTRADA: 'Estrada', ESTR: 'Estrada', RODOVIA: 'Rodovia', ROD: 'Rodovia', ALAMEDA: 'Alameda', AL: 'Alameda', CORREDOR: 'Corredor', PRACA: 'Praça', 'PRAÇA': 'Praça' }
+const tcaseVia = s => s.toLowerCase().replace(/(^|[\s\-.])([a-zà-ÿ])/g, (m, a, c) => a + c.toUpperCase())
+function normVia(raw) {
+  const m = String(raw).replace(/\s+/g, ' ').trim().match(VIA_RE); if (!m) return null
+  const pfx = VIA_PFX[(m[1] || m[2]).toUpperCase()] || (m[1] || m[2])
+  let nome = m[3].trim(); if (nome === nome.toUpperCase()) nome = tcaseVia(nome)
+  return pfx + ' ' + nome
+}
 
 export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions = {} } = {}) {
   const texts = sources.texts
   const numTexts = texts.filter(t => /^\d{1,4}$/.test(t.text))
-  const ruaTexts = texts.filter(t => /^RUA\b/i.test(t.text))
-  const ruaObjs = ruaTexts.map(t => ({ name: t.text.replace(/\s+/g, ' ').trim().replace(/^RUA/i, 'Rua'), x: t.x, y: t.y }))
+  const ruaObjs = texts.map(t => { const n = normVia(t.text); return n ? { name: n, x: t.x, y: t.y } : null }).filter(Boolean)
   const labels = texts.filter(t => /^LOTE\s*\d+/i.test(t.text))
   const streets = [...new Set(ruaObjs.map(r => r.name))].sort()
 
@@ -103,6 +123,8 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
   let glebaP = null
   sources.polys.forEach(p => { let d = 0; for (const c of centG) if (pip(c, p.verts)) d++; if (d > centG.length * 0.5) { const a = areaWithArcs(p.verts, p.bulges || []); if (!glebaP || a < glebaP.area) glebaP = { verts: p.verts, area: a } } })
   const glebaEdges = glebaP ? glebaP.verts.map((v, i) => [v, glebaP.verts[(i + 1) % glebaP.verts.length]]) : []
+  // marca cada via como interna (rótulo dentro da gleba = via do loteamento) ou externa (pré-existente)
+  if (glebaP) ruaObjs.forEach(r => { r.inside = pip([r.x, r.y], glebaP.verts) })
 
   lots.forEach(lot => {
     const vs = lot.verts, n = vs.length, bg = lot.bulges
