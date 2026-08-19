@@ -78,7 +78,7 @@ export default function App() {
 
   if (view === 'marcos') return (
     <div className="app">
-      <MarcosPage state={state} numeracao={numeracao} setNumeracao={setNumeracao} onClose={() => setView('memorial')} />
+      <MarcosPage state={state} numeracao={numeracao} setNumeracao={setNumeracao} loteamento={loteamento} onClose={() => setView('memorial')} />
     </div>
   )
 

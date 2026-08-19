@@ -1,7 +1,8 @@
 import { nb } from '../engine/extenso.js'
+import { exportMarcosDxf } from '../export/dxf.js'
 import Viewer from './Viewer.jsx'
 
-export default function MarcosPage({ state, numeracao, setNumeracao, onClose }) {
+export default function MarcosPage({ state, numeracao, setNumeracao, loteamento = 'loteamento', onClose }) {
   const gerado = numeracao === 'gerar' && state?.marcos
   const marcos = state?.marcos || []
 
@@ -31,6 +32,7 @@ export default function MarcosPage({ state, numeracao, setNumeracao, onClose }) 
                 <div className="kpi"><div className="v">{marcos.length}</div><div className="l">Marcos</div></div>
                 <div className="kpi"><div className="v">{marcos.filter(m => m.uso >= 2).length}</div><div className="l">Compartilhados</div></div>
               </div>
+              <button className="btn sm primary" onClick={() => exportMarcosDxf(state, loteamento)}>⬇ DXF com os pontos</button>
               <button className="btn sm" onClick={exportarCSV}>⬇ Coordenadas (CSV)</button>
             </>}
           </>
