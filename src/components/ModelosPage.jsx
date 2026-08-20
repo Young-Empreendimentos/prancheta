@@ -37,6 +37,7 @@ export default function ModelosPage({ onClose }) {
   const updConf = patch => { setDraft(d => ({ ...d, desc: { ...d.desc, conf: { ...d.desc.conf, ...patch } } })); setDirty(true) }
   const updWord = patch => { setDraft(d => ({ ...d, word: { ...d.word, ...patch } })); setDirty(true) }
   const updSec = patch => { setDraft(d => ({ ...d, secoes: { ...d.secoes, ...patch } })); setDirty(true) }
+  const updDados = patch => { setDraft(d => ({ ...d, dados: { ...(d.dados || {}), ...patch } })); setDirty(true) }
   const addConf = () => { const v = novaConf.trim(); if (!v || (draft.confrontacoes || []).includes(v)) return; setDraft(d => ({ ...d, confrontacoes: [...(d.confrontacoes || []), v] })); setDirty(true); setNovaConf('') }
   const rmConf = v => { setDraft(d => ({ ...d, confrontacoes: (d.confrontacoes || []).filter(x => x !== v) })); setDirty(true) }
 
@@ -179,6 +180,28 @@ export default function ModelosPage({ onClose }) {
                 : draft.confrontacoes.map(c => <span key={c} className="conf-chip">{c}<button onClick={() => rmConf(c)} title="remover">×</button></span>)}
             </div>
           </section>
+
+          {draft.tipo === 'condominio' && (
+            <section className="mod-card wide">
+              <h3>Dados do empreendimento <span className="vars">preâmbulo e assinatura do condomínio — mudam a cada projeto</span></h3>
+              <div className="mf-row">
+                <Field label="Nº da matrícula"><input value={draft.dados?.matricula || ''} onChange={e => updDados({ matricula: e.target.value })} /></Field>
+                <Field label="Comarca"><input value={draft.dados?.comarca || ''} onChange={e => updDados({ comarca: e.target.value })} placeholder="ex.: Cruz Alta" /></Field>
+              </div>
+              <div className="mf-row">
+                <Field label="Proprietário"><input value={draft.dados?.proprietario || ''} onChange={e => updDados({ proprietario: e.target.value })} /></Field>
+                <Field label="CNPJ"><input value={draft.dados?.cnpj || ''} onChange={e => updDados({ cnpj: e.target.value })} /></Field>
+              </div>
+              <div className="mf-row">
+                <Field label="Responsável técnico"><input value={draft.dados?.responsavel || ''} onChange={e => updDados({ responsavel: e.target.value })} placeholder="ex.: Arquiteta Fulana" /></Field>
+                <Field label="CAU/CREA"><input value={draft.dados?.cau || ''} onChange={e => updDados({ cau: e.target.value })} /></Field>
+              </div>
+              <div className="mf-row">
+                <Field label="Título profissional"><input value={draft.dados?.titulo || ''} onChange={e => updDados({ titulo: e.target.value })} placeholder="Arquiteta e Urbanista" /></Field>
+                <Field label="Data"><input value={draft.dados?.data || ''} onChange={e => updDados({ data: e.target.value })} placeholder="ex.: 10 de agosto de 2026" /></Field>
+              </div>
+            </section>
+          )}
 
           <section className="mod-card wide">
             <h3>Prévia (lote de exemplo)</h3>

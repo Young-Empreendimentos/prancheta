@@ -7,10 +7,11 @@ import {
 import { areaExtenso, nb } from './extenso.js'
 import { modeloAlegrete, render } from '../models/modelo.js'
 
-// cláusula de medida (azimute / rumo / ambos / arco) conforme o modelo
-function medida(modelo, sd) {
+// cláusula de medida (azimute / rumo / ambos / arco) conforme o modelo. perim=true usa o arco de perímetro
+// (quarteirão/rua/área): no condomínio, esse arco NÃO leva "e raio de ..." (como no memorial dos quarteirões).
+function medida(modelo, sd, perim) {
   const d = modelo.desc
-  if (sd.arc && sd.arc.arc) return render(d.medidaArco, { dir: sd.arc.dir, raio: nb(sd.arc.raio, 2), desenv: nb(sd.arc.desenv, 2), az: toGMS(sd.az), corda: nb(sd.dist, 2) })
+  if (sd.arc && sd.arc.arc) return render((perim && d.medidaArcoPerim) || d.medidaArco, { dir: sd.arc.dir, raio: nb(sd.arc.raio, 2), desenv: nb(sd.arc.desenv, 2), az: toGMS(sd.az), corda: nb(sd.dist, 2) })
   const vars = { az: toGMS(sd.az), quad: quad(sd.az), rumo: toRumo(sd.az), dist: nb(sd.dist, 2) }
   if (modelo.angulo === 'rumo') return render(d.medidaRumo, vars)
   if (modelo.angulo === 'ambos') return render(d.medidaAmbos, vars)
@@ -26,6 +27,10 @@ function confClause(modelo, sd) {
   if (sd.kind === 'area') return render(c.area, { c: sd.conf })
   if (sd.kind === 'perimetro') return render(c.perimetro, { c: sd.val || (cond ? '[limite do condomínio — definir vizinho]' : '[limite do loteamento — definir vizinho]') })
   if (sd.kind === 'wd') return c.wd
+  if (sd.kind === 'livre') {                                       // texto do operador/modelo: artigo só se for "Lote/Unidade N"
+    const v = lc(sd.conf)
+    return /^(lote|unidade)\b/i.test(v) ? render(c.lote, { art, c: v }) : render(c.perimetro, { c: v })
+  }
   return render(c.lote, { art, c: lc(sd.conf) })
 }
 
@@ -87,6 +92,125 @@ function guessStreet(a, b, C, ruaObjs) {
     if (r.inside) { if (sc < sIn) { sIn = sc; bIn = r } } else if (sc < sOut) { sOut = sc; bOut = r }
   }
   return bIn ? bIn.name : (bOut ? bOut.name : null)
+}
+// texto mais próximo À FRENTE do lado (normal para fora), dentro de `cap` m — genérico (vizinho/confrontante externo)
+function frenteTexto(a, b, C, objs, cap) {
+  const M = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], L = dist(a, b); if (L < 1e-6) return null
+  const tx = (b[0] - a[0]) / L, ty = (b[1] - a[1]) / L; let nx = -ty, ny = tx
+  if ((M[0] + nx - C[0]) ** 2 + (M[1] + ny - C[1]) ** 2 < (M[0] - C[0]) ** 2 + (M[1] - C[1]) ** 2) { nx = -nx; ny = -ny }
+  let best = null, bs = 1e18
+  for (const o of objs) { const vx = o.x - M[0], vy = o.y - M[1], out = vx * nx + vy * ny, lat = vx * tx + vy * ty; if (out <= 0 || out > cap) continue; const sc = out + Math.abs(lat) * 0.25; if (sc < bs) { bs = sc; best = o } }
+  return best ? best.name : null
+}
+
+// CONTORNO DO QUARTEIRÃO pela UNIÃO dos lotes: as arestas internas (compartilhadas por 2 lotes da mesma quadra)
+// se cancelam; sobram as de borda, que são encadeadas no maior anel. Carrega bulges (arcos) das arestas originais.
+// Validado contra o memorial real (Cruz Alta): a área bate com a "área privativa" de cada quarteirão (~0,2%).
+function quadraOutline(lotsQ) {
+  const TOL = 0.03, key = p => Math.round(p[0] / TOL) + ',' + Math.round(p[1] / TOL)
+  const edges = new Map()
+  for (const l of lotsQ) {
+    const vs = l.verts, bg = l.bulges || [], n = vs.length
+    for (let i = 0; i < n; i++) {
+      const a = vs[i], b = vs[(i + 1) % n], ka = key(a), kb = key(b); if (ka === kb) continue
+      const uk = ka < kb ? ka + '|' + kb : kb + '|' + ka, e = edges.get(uk)
+      if (e) e.count++; else edges.set(uk, { a, b, bulge: bg[i] || 0, ka, kb, count: 1 })
+    }
+  }
+  const boundary = [...edges.values()].filter(e => e.count === 1); if (boundary.length < 3) return null
+  const adj = new Map(), add = (k, e) => { (adj.get(k) || adj.set(k, []).get(k)).push(e) }
+  for (const e of boundary) { add(e.ka, e); add(e.kb, e) }
+  const used = new Set(), rings = []
+  for (const e0 of boundary) {
+    if (used.has(e0)) continue
+    const verts = [], bulges = []; let curK = e0.ka, e = e0
+    while (e && !used.has(e)) {
+      used.add(e); const fromA = e.ka === curK
+      verts.push(fromA ? e.a : e.b); bulges.push(fromA ? e.bulge : -e.bulge)
+      const nextK = fromA ? e.kb : e.ka; curK = nextK; e = (adj.get(nextK) || []).find(x => !used.has(x))
+    }
+    if (verts.length >= 3) rings.push({ verts, bulges })
+  }
+  if (!rings.length) return null
+  rings.sort((a, b) => Math.abs(areaWithArcs(b.verts, b.bulges)) - Math.abs(areaWithArcs(a.verts, a.bulges)))
+  return mergeColineares(rings[0])   // maior anel = contorno externo; funde só retas colineares (preserva a área)
+}
+// funde vértices redundantes de retas EXATAMENTE colineares (não mexe em arcos → área intacta)
+function mergeColineares(ring) {
+  let v = ring.verts.slice(), b = ring.bulges.slice(), changed = true, guard = 0
+  while (changed && guard++ < 9999) {
+    changed = false
+    if (v.length <= 3) break
+    for (let i = 0; i < v.length; i++) {
+      const j = (i + 1) % v.length, k = (i + 2) % v.length
+      if (Math.abs(b[i] || 0) > 1e-7 || Math.abs(b[j] || 0) > 1e-7) continue   // só retas
+      const A = v[i], V = v[j], B = v[k]
+      const d1x = V[0] - A[0], d1y = V[1] - A[1], d2x = B[0] - V[0], d2y = B[1] - V[1]
+      const l1 = Math.hypot(d1x, d1y), l2 = Math.hypot(d2x, d2y); if (l1 < 1e-9 || l2 < 1e-9) continue
+      const cross = (d1x * d2y - d1y * d2x) / (l1 * l2), dot = (d1x * d2x + d1y * d2y) / (l1 * l2)
+      if (Math.abs(cross) < Math.sin(0.5 * Math.PI / 180) && dot > 0) { v.splice(j, 1); b.splice(j, 1); changed = true; break }
+    }
+  }
+  return { verts: v, bulges: b }
+}
+// --- simplificação do perímetro do quarteirão: cada FACE (trecho entre cantos, mesmo confrontante) vira UMA
+// curva/reta, como no memorial da arquiteta ("apenas os pontos principais"). Só funde quando um único arco fica
+// dentro de TOL de todos os pontos originais; senão mantém o detalhe (nunca inventa um arco errado). A ÁREA do
+// quarteirão continua vindo da união exata dos lotes — aqui é só o traço do texto ("comprimento aproximado").
+const angDiff = (a, b) => { let d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d }
+function circleFit(pts) {
+  let sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0, sxz = 0, syz = 0, sz = 0; const N = pts.length
+  for (const [x, y] of pts) { const z = x * x + y * y; sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y; sxz += x * z; syz += y * z; sz += z }
+  const M = [[sxx, sxy, sx], [sxy, syy, sy], [sx, sy, N]], r = [sxz, syz, sz]
+  const det = M[0][0] * (M[1][1] * M[2][2] - M[1][2] * M[2][1]) - M[0][1] * (M[1][0] * M[2][2] - M[1][2] * M[2][0]) + M[0][2] * (M[1][0] * M[2][1] - M[1][1] * M[2][0])
+  if (Math.abs(det) < 1e-6) return null
+  const cof = [
+    [(M[1][1] * M[2][2] - M[1][2] * M[2][1]), -(M[1][0] * M[2][2] - M[1][2] * M[2][0]), (M[1][0] * M[2][1] - M[1][1] * M[2][0])],
+    [-(M[0][1] * M[2][2] - M[0][2] * M[2][1]), (M[0][0] * M[2][2] - M[0][2] * M[2][0]), -(M[0][0] * M[2][1] - M[0][1] * M[2][0])],
+    [(M[0][1] * M[1][2] - M[0][2] * M[1][1]), -(M[0][0] * M[1][2] - M[0][2] * M[1][0]), (M[0][0] * M[1][1] - M[0][1] * M[1][0])],
+  ]
+  const s = [0, 1, 2].map(i => (cof[i][0] * r[0] + cof[i][1] * r[1] + cof[i][2] * r[2]) / det)
+  const cx = s[0] / 2, cy = s[1] / 2, R = Math.sqrt(Math.max(0, s[2] + cx * cx + cy * cy))
+  return { cx, cy, R }
+}
+function arcCenterOf(p1, p2, bulge) {
+  const c = dist(p1, p2); if (c < 1e-9 || Math.abs(bulge) < 1e-9) return null
+  const th = 4 * Math.atan(bulge), R = c / (2 * Math.sin(th / 2))
+  const mx = (p1[0] + p2[0]) / 2, my = (p1[1] + p2[1]) / 2, dx = p2[0] - p1[0], dy = p2[1] - p1[1], apo = R * Math.cos(th / 2)
+  return { cx: mx + (dy / c) * apo, cy: my + (-dx / c) * apo, R: Math.abs(R) }
+}
+function distSeg(p, a, b) { const dx = b[0] - a[0], dy = b[1] - a[1], L = dx * dx + dy * dy; if (L < 1e-12) return dist(p, a); let t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L; t = Math.max(0, Math.min(1, t)); return dist(p, [a[0] + t * dx, a[1] + t * dy]) }
+// tenta representar a face (lista de pontos) por UMA reta ou UM arco dentro de TOL; devolve {ok, bulge}
+function faceArco(run, TOL) {
+  if (run.length <= 2) return { ok: false }
+  const A = run[0], B = run[run.length - 1], chord = dist(A, B); if (chord < 1e-6) return { ok: false }
+  let dl = 0; for (const p of run) dl = Math.max(dl, distSeg(p, A, B)); if (dl <= TOL) return { ok: true, bulge: 0 }   // reta
+  const fit = circleFit(run); if (!fit || fit.R > 1e5) return { ok: false }
+  const th = 2 * Math.asin(Math.min(1, chord / (2 * fit.R)))
+  const vm = run[Math.floor(run.length / 2)], cross = (B[0] - A[0]) * (vm[1] - A[1]) - (B[1] - A[1]) * (vm[0] - A[0])
+  const bulge = (cross > 0 ? 1 : -1) * Math.tan(th / 4), c = arcCenterOf(A, B, bulge); if (!c) return { ok: false }
+  let da = 0; for (const p of run) da = Math.max(da, Math.abs(Math.hypot(p[0] - c.cx, p[1] - c.cy) - c.R)); if (da <= TOL) return { ok: true, bulge }
+  return { ok: false }
+}
+// divide o anel em faces (canto > TH° ou troca de confrontante) e simplifica cada face -> segmentos {from,to,bulge,conf}
+function simplificaPerimetro(vs, bg, TH = 22, TOL = 0.35) {
+  const n = vs.length; if (n < 3) return vs.map((_, i) => ({ from: i, to: (i + 1) % n, bulge: bg[i] || 0 }))
+  const az = vs.map((v, i) => azimuth(v, vs[(i + 1) % n]))
+  const isBreak = i => angDiff(az[(i + 1) % n], az[i]) > TH   // quebra a face só em CANTO real (não por confrontante)
+  let start = 0; for (let i = 0; i < n; i++) { if (isBreak(i)) { start = (i + 1) % n; break } }
+  const order = Array.from({ length: n }, (_, k) => (start + k) % n)   // índices de aresta a partir de um canto
+  const faces = []; let cur = [order[0]]
+  for (let k = 1; k < n; k++) { if (isBreak(order[k - 1])) { faces.push(cur); cur = [] } cur.push(order[k]) }
+  faces.push(cur)
+  const segs = []
+  for (const face of faces) {
+    const f0 = face[0], f1 = face[face.length - 1]
+    const run = face.map(ei => vs[ei]); run.push(vs[(f1 + 1) % n])
+    const a = face.length > 1 ? faceArco(run, TOL) : { ok: false }
+    if (a.ok) segs.push({ from: f0, to: (f1 + 1) % n, bulge: a.bulge })
+    else for (const ei of face) segs.push({ from: ei, to: (ei + 1) % n, bulge: bg[ei] || 0 })
+  }
+  return segs
 }
 const titleArea = s => String(s).toLowerCase().replace(/(^|\s)\S/g, c => c.toUpperCase())
 
@@ -213,10 +337,7 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
   // polígonos NOMEADOS p/ o memorial de condomínio: quarteirões (camada QUADRA) e ruas (camada RUAS).
   // deduplica por nome (contorno + hachura da mesma via/quadra) mantendo o de maior área.
   const dedupNome = arr => { const mp = new Map(); for (const o of arr) { const a = areaWithArcs(o.verts, o.bulges || []); const e = mp.get(o.nome); if (!e || a > e.a) mp.set(o.nome, { o, a }) } return [...mp.values()].map(x => x.o) }
-  const quadraPolis = dedupNome(sources.polys.filter(p => /quadra/i.test(p.layer)).map(p => {
-    const t = texts.find(x => /^(QUADRA|QUARTEIR)/i.test(x.text) && pip([x.x, x.y], p.verts))
-    return t ? { nome: 'Quadra ' + t.text.replace(/^(QUADRA|QUARTEIR[ÃA]O)\s*/i, '').trim(), verts: p.verts, bulges: p.bulges || [] } : null
-  }).filter(Boolean))
+  let quadraPolis = []   // quarteirões nomeados — construídos ADIANTE, após a detecção de quadras (precisa de lot.quadra)
   const ruaPolis = dedupNome(sources.polys.filter(p => /rua|vi[áa]rio/i.test(p.layer)).map(p => {
     const C = centroid(p.verts)
     let t = texts.find(x => normVia(x.text) && pip([x.x, x.y], p.verts))
@@ -236,6 +357,12 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
   // marca cada via como interna (rótulo dentro da gleba = via do loteamento) ou externa (pré-existente)
   if (glebaP) ruaObjs.forEach(r => { r.inside = pip([r.x, r.y], glebaP.verts) })
 
+  // vizinhos com matrícula: textos da planta que descrevem um confrontante já matriculado (ex.: "Loteamento X - Mat. 52.037")
+  // no LIMITE do loteamento, quando há um desses à frente do lado, copiamos o texto como confrontação (nunca a rua).
+  const vizObjs = texts
+    .filter(t => /matr[íi]cul|\bmat\.?\s*n?[ºo.]?\s*\d|\bmatr?[íi]?c?\.?\s*\d{2}/i.test(t.text))
+    .map(t => ({ name: t.text.replace(/\s+/g, ' ').trim(), x: t.x, y: t.y }))
+
   lots.forEach(lot => {
     const vs = lot.verts, n = vs.length, bg = lot.bulges
     lot.pts = vs.map(v => ptNum(v, numTexts) || null).map((p, i) => p || ('P' + (i + 1)))
@@ -249,11 +376,15 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
       else if (o && o.area) { conf = titleArea(o.area.name); kind = 'area' }
       else if (resolutions[sk]) { kind = resolutions[sk].kind; val = resolutions[sk].val; conf = val }
       else {
+        const onEdge = glebaEdges.some(e => segOverlap(vs[i], vs[j], e[0], e[1]) > 0.8)
+        const viz = vizObjs.length ? frenteTexto(vs[i], vs[j], C, vizObjs, 160) : null
         const r = guessStreet(vs[i], vs[j], C, ruaObjs)
-        // lado sem lote/área vizinho e sem rua à frente = LIMITE do loteamento (operador define o vizinho externo).
+        // 1) limite com vizinho já matriculado: copia o texto da planta (nunca vira "rua") — regra do loteamento.
+        // 2) senão, rua à frente. 3) senão, LIMITE do loteamento (operador define o vizinho externo).
         // vale tanto p/ borda confirmada (coincide com a gleba) quanto p/ borda sem gleba desenhada (ex.: Guaíba).
-        if (r) { kind = 'rua'; val = r; conf = r; auto = true }
-        else { kind = 'perimetro'; conf = '(limite do loteamento)'; auto = glebaEdges.some(e => segOverlap(vs[i], vs[j], e[0], e[1]) > 0.8) }
+        if (viz && (onEdge || !r)) { kind = 'perimetro'; conf = viz; val = viz; auto = true }
+        else if (r) { kind = 'rua'; val = r; conf = r; auto = true }
+        else { kind = 'perimetro'; conf = '(limite do loteamento)'; auto = onEdge }
       }
       lot.sides.push({ idx: i, sk, from: lot.pts[i], to: lot.pts[j], az: azimuth(vs[i], vs[j]), dist: dist(vs[i], vs[j]), bulge: bl, arc: ai, conf, kind, val, auto })
     }
@@ -290,6 +421,13 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
   }
 
   const byQ = {}; lots.forEach(l => { (byQ[l.quadra] = byQ[l.quadra] || []).push(l) })
+
+  // quarteirões p/ o memorial de condomínio: o contorno de cada quadra é a UNIÃO dos seus lotes (não o
+  // polígono "QUADRA" desenhado, que é impreciso). Assim TODAS as quadras entram, com a área privativa correta.
+  quadraPolis = Object.keys(byQ).filter(q => q && q !== '?').sort((a, b) => String(a).localeCompare(String(b), 'pt', { numeric: true }))
+    .map(q => { const o = quadraOutline(byQ[q]); return o ? { nome: 'Quadra ' + q, verts: o.verts, bulges: o.bulges } : null })
+    .filter(Boolean)
+
   Object.values(byQ).forEach(arr => { const a = arr.map(l => l.area).sort((x, y) => x - y); const med = a[Math.floor(a.length / 2)] || 0; arr.forEach(l => { if (med > 0 && (l.area < med * 0.4 || l.area > med * 2.5)) { l.issues.push('área destoa da quadra'); l.warn = true } }) })
 
   // fração ideal (condomínio): proporção da área da unidade sobre o total das unidades (= área total/gleba).
@@ -314,7 +452,7 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
     }
   }
 
-  return { model, sources, lots, areaObjs, ruaObjs, streets, textosLivres, quadraObjs, quadraPolis, ruaPolis, allSides, numTexts, lotLayer, numeracao, marcosMap, marcos }
+  return { model, sources, lots, areaObjs, ruaObjs, vizObjs, streets, textosLivres, quadraObjs, quadraPolis, ruaPolis, glebaEdges, allSides, numTexts, lotLayer, numeracao, marcosMap, marcos }
 }
 
 export function lotMemorial(lot, { loteamento = '—', municipio = '—', modelo = modeloAlegrete() } = {}) {
@@ -404,19 +542,30 @@ function perimetroMemorial(vs0, bg0, state, modelo, intro, area, selfNome) {
   const d = modelo.desc
   let vs = vs0.slice(), bg = (bg0 || []).slice()
   if (signedArea(vs) > 0) { const r = reversePoly(vs, bg); vs = r.v; bg = r.b }
-  const pts = vs.map((v, i) => marcoLabel(state, v, i)), C = centroid(vs)
+  const C = centroid(vs)
   const conj = [...(state.quadraPolis || []), ...(state.ruaPolis || []), ...(state.areaObjs || []).map(a => ({ nome: titleArea(a.name), verts: a.verts }))]
     .filter(o => o.verts !== vs0 && o.nome !== selfNome)
   const nomeDe = (a, b) => { for (const o of conj) { const V = o.verts; for (let i = 0; i < V.length; i++) if (segOverlap(a, b, V[i], V[(i + 1) % V.length]) > 0.8) return o.nome } return null }
-  // 1ª passada: coleta confrontantes distintos (p/ o "circunscrito por ...")
-  const conf = vs.map((_, i) => { const j = (i + 1) % vs.length; return nomeDe(vs[i], vs[j]) || guessStreet(vs[i], vs[j], C, state.ruaObjs) || '[a definir]' })
-  const distintos = [...new Set(conf.filter(c => c !== '[a definir]'))]
-  let s = intro + (distintos.length ? ', circunscrito por ' + distintos.join(', ') : '') + ', com as seguintes medidas e confrontações em sentido ' + d.sentido + ': ' + render(d.partida, { p0: pts[0] })
-  for (let i = 0; i < vs.length; i++) {
-    const j = (i + 1) % vs.length, bl = bg[i] || 0, ai = arcInfo(vs[i], vs[j], bl)
-    const sd = { az: azimuth(vs[i], vs[j]), dist: dist(vs[i], vs[j]), arc: ai }
-    s += d.conector + 'confrontando com ' + conf[i] + medida(modelo, sd) + render(d.ate, { to: pts[j] })
-    s += (j === 0) ? d.encerra + '.' : d.sep
+  const viz = state.vizObjs || [], gE = state.glebaEdges || []
+  // 1) simplifica a geometria: cada face (trecho entre CANTOS) vira UMA curva/reta ("pontos principais", como no
+  //    memorial dela). 2) UM confrontante por segmento: aresta na BORDA DA GLEBA = limite externo (vizinho
+  //    matriculado, nunca rua interna); interna = quadra/rua vizinha nomeada, senão rua por geometria.
+  const segs = simplificaPerimetro(vs, bg)
+  const confDe = (a, b) => {
+    const externa = gE.some(e => segOverlap(a, b, e[0], e[1]) > 0.8)
+    if (externa) return (viz.length ? frenteTexto(a, b, C, viz, 220) : null) || nomeDe(a, b) || '[a definir]'
+    return nomeDe(a, b) || guessStreet(a, b, C, state.ruaObjs) || (viz.length ? frenteTexto(a, b, C, viz, 160) : null) || '[a definir]'
+  }
+  segs.forEach(g => { g.conf = confDe(vs[g.from], vs[g.to]) })
+  const distintos = [...new Set(segs.map(g => g.conf).filter(c => c !== '[a definir]'))]
+  let s = intro + (distintos.length ? ', circunscrito por ' + distintos.join(', ') : '') + ', com as seguintes dimensões e confrontações em sentido ' + d.sentido + ': ' + render(d.partida, { p0: marcoLabel(state, vs[segs[0].from], segs[0].from) })
+  for (let k = 0; k < segs.length; k++) {
+    const g = segs[k], a = vs[g.from], b = vs[g.to], ai = arcInfo(a, b, g.bulge)
+    const sd = { az: azimuth(a, b), dist: dist(a, b), arc: ai }
+    // via → "no alinhamento com a {rua}"; demais (quadra/área/vizinho externo) → "confrontando com {x}"
+    const cl = normVia(g.conf) ? render(d.conf.rua, { c: g.conf }) : render(d.conf.perimetro, { c: g.conf })
+    s += d.conector + cl + medida(modelo, sd, true) + render(d.ate, { to: marcoLabel(state, b, g.to) })
+    s += (k === segs.length - 1) ? d.encerra + '.' : d.sep
   }
   return { area, text: s }
 }

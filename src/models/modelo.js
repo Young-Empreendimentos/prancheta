@@ -32,12 +32,12 @@ function descPadrao(tipo = 'loteamento') {
     sentido: 'horário',
     conector: 'deste ponto segue ',
     cabecalho: cond
-      ? '{unidade} {num}: Uma unidade autônoma, situada na quadra {quadra}, no Condomínio "{loteamento}", cidade de {municipio}, com área privativa de {priv} m² ({privExt}), área real de uso comum de {comum} m² ({comumExt}), área real total de {total} m² ({totalExt}), correspondendo-lhe uma fração ideal equivalente a {fracao}, com as seguintes medidas e confrontações em sentido {sentido}: '
+      ? '{unidade} {num}: Uma unidade autônoma, situada na quadra {quadra}, no Condomínio "{loteamento}", cidade de {municipio}, com área privativa de {priv} m² ({privExt}), área real de uso comum de {comum} m² ({comumExt}), área real total de {total} m² ({totalExt}), correspondendo-lhe uma fração ideal equivalente a {fracao}, com as seguintes dimensões e confrontações em sentido {sentido}: '
       : '{unidade} {num}: Um terreno urbano localizado no Loteamento "{loteamento}", no município de {municipio}, situado na Quadra {quadra}, com as seguintes medidas e confrontações em sentido {sentido}: ',
     partida: 'Partindo do ponto {p0}; ',
     partidaSemMarco: cond ? 'Inicia-se a descrição pela frente da unidade, ' : 'Inicia-se a descrição pela frente do lote, ',
     conf: {
-      rua: cond ? 'confrontando com a {c}' : 'no alinhamento com a {c}',   // condomínio: via interna é área comum
+      rua: 'no alinhamento com a {c}',                                     // via (rua/avenida): alinhamento
       lote: 'confrontando com {art} {c}',                                  // {art} = o/a conforme o termo (Lote/Unidade)
       area: 'confrontando com a {c}',
       perimetro: 'confrontando com {c}',
@@ -46,8 +46,13 @@ function descPadrao(tipo = 'loteamento') {
     medidaAz: cond ? ', com azimute de {az} e distância de {dist} m' : ', com azimute de {az}, sentido {quad} e distância de {dist} m',
     medidaRumo: ', com rumo de {rumo} e distância de {dist} m',
     medidaAmbos: ', com azimute de {az} (rumo {rumo}) e distância de {dist} m',
+    // arco no LOTE (com raio, como no memorial da unidade)
     medidaArco: cond
       ? ', por uma curva de comprimento aproximado de {desenv} m e raio de {raio} m, com azimute de {az} e distância em linha reta de {corda} m'
+      : ', por uma curva à {dir} com raio de {raio} m e desenvolvimento de {desenv} m',
+    // arco no PERÍMETRO de quarteirão/rua/área (condomínio: SEM raio, como no memorial dos quarteirões)
+    medidaArcoPerim: cond
+      ? ', por uma curva de comprimento aproximado de {desenv} m, com azimute de {az} e distância em linha reta de {corda} m'
       : ', por uma curva à {dir} com raio de {raio} m e desenvolvimento de {desenv} m',
     coord: ' (N {N} m, E {E} m)',                              // anexado ao ponto de chegada, se coordenadas.incluir
     ate: ', até o ponto {to}',
