@@ -102,6 +102,24 @@ function normVia(raw) {
   return pfx + ' ' + nome
 }
 
+// detecta QUADRAS por POLÍGONO: quando há polígonos numa camada "QUADRA" com texto "QUADRA X" dentro
+// (ex.: Cruz Alta, quarteirões A..I-2), atribui cada lote à quadra que o contém. Retorna as quadras (p/ o memorial).
+function detectQuadrasPoly(lots, sources, texts) {
+  const qpolys = sources.polys.filter(p => /quadra/i.test(p.layer))
+  if (!qpolys.length) return null
+  const qtxt = texts.filter(t => /^QUADRA\b/i.test(t.text) || /^QUARTEIR/i.test(t.text))
+  const cents = lots.map(l => centroid(l.verts))
+  const quadras = qpolys.map(p => {
+    const lbl = qtxt.find(t => pip([t.x, t.y], p.verts))
+    return { verts: p.verts, bulges: p.bulges || [], nome: lbl ? lbl.text.replace(/^(QUADRA|QUARTEIR[ÃA]O)\s*/i, '').trim() : null }
+  }).filter(q => q.nome)
+  if (!quadras.length) return null
+  const assign = cents.map(c => { const q = quadras.find(q => pip(c, q.verts)); return q ? q.nome : null })
+  if (assign.filter(Boolean).length <= lots.length * 0.5) return null   // cobre menos da metade → não usa (não muta)
+  lots.forEach((l, i) => { if (assign[i]) l.quadra = assign[i] })
+  return quadras
+}
+
 // detecta QUADRAS quando o bloco não traz o nome: agrupa lotes por vizinhança (quem divide divisa =
 // mesma quadra; a rua separa) e rotula cada grupo com o texto "QUADRA nn" que cai nele. Sistema-arquiteta.
 function detectQuadras(lots, texts) {
@@ -118,7 +136,12 @@ function detectQuadras(lots, texts) {
   const cents = lots.map(l => centroid(l.verts))
   const qtxt = texts.filter(t => /QUADRA|^Q\s*\d/i.test(t.text))
   const votes = {} // raiz do cluster -> { num: contagem }
-  qtxt.forEach(t => { let bi = 0, bd = 1e18; for (let i = 0; i < n; i++) { const d = (cents[i][0] - t.x) ** 2 + (cents[i][1] - t.y) ** 2; if (d < bd) { bd = d; bi = i } } const mm = t.text.match(/\d+/); const num = mm ? String(parseInt(mm[0])) : null; if (num) { const r = find(bi); (votes[r] = votes[r] || {})[num] = (votes[r][num] || 0) + 1 } })
+  qtxt.forEach(t => {
+    let bi = 0, bd = 1e18; for (let i = 0; i < n; i++) { const d = (cents[i][0] - t.x) ** 2 + (cents[i][1] - t.y) ** 2; if (d < bd) { bd = d; bi = i } }
+    let label = t.text.replace(/^(QUADRA|QUARTEIR[ÃA]O)\s*/i, '').replace(/^Q\.?\s*/i, '').trim()  // "QUADRA A"->"A", "QUADRA I2"->"I2"
+    if (/^\d+$/.test(label)) label = String(parseInt(label))
+    if (label) { const r = find(bi); (votes[r] = votes[r] || {})[label] = (votes[r][label] || 0) + 1 }
+  })
   // ordena clusters por posição (cima→baixo, esq→dir) p/ numerar os sem texto
   const roots = [...new Set(lots.map((_, i) => find(i)))]
   const cxy = r => { const idx = lots.map((_, i) => i).filter(i => find(i) === r); return [idx.reduce((s, i) => s + cents[i][0], 0) / idx.length, idx.reduce((s, i) => s + cents[i][1], 0) / idx.length] }
@@ -142,9 +165,22 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
     .filter(s => s && s.length >= 3 && !/^\d/.test(s) && !/^LOTE\s*\d/i.test(s) && !/QUADRA|^Q\s*\d/i.test(s) && !/^(ÁREA|AREA)\b/i.test(s) && !/m²|°|^A=/i.test(s) && !normVia(s)))].sort()
 
   const polys = sources.polys.filter(p => lotLayer === '__all__' || p.layer === lotLayer)
+  // parear rótulo "LOTE nn" a cada polígono: 1º o que está DENTRO (reuso permitido — contêiner é removido depois);
+  // 2º p/ polígono sem rótulo dentro, o rótulo SOLTO (fora de todo polígono) mais próximo, dentro do tamanho do lote.
+  const pares = polys.map(p => ({ p, lbl: labels.find(t => pip([t.x, t.y], p.verts)) || null }))
+  const soltos = labels.filter(t => !polys.some(p => pip([t.x, t.y], p.verts)))
+  const usedSolto = new Set()
+  for (const par of pares) {
+    if (par.lbl) continue
+    const C = centroid(par.p.verts); let ext = 0
+    for (const v of par.p.verts) ext = Math.max(ext, Math.hypot(v[0] - C[0], v[1] - C[1]))
+    let best = null, bd = ext * 1.2
+    for (const t of soltos) { if (usedSolto.has(t)) continue; const d = Math.hypot(t.x - C[0], t.y - C[1]); if (d < bd) { bd = d; best = t } }
+    if (best) { usedSolto.add(best); par.lbl = best }
+  }
   const cand = []
-  for (const p of polys) {
-    const lbl = labels.find(t => pip([t.x, t.y], p.verts)); if (!lbl) continue
+  for (const { p, lbl } of pares) {
+    if (!lbl) continue
     const num = (lbl.text.match(/\d+/) || ['?'])[0]
     const qm = (p.src && p.src.match(/(?:q(?:ua|au)dra|\.Q)\s*0?(\d+)/i) || [])[1] || '?'
     let vs = p.verts, bg = p.bulges || []
@@ -230,10 +266,13 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
     if (lot.area < 1) iss.push('área quase zero')
     lot.issues = iss; lot.warn = lot.pend > 0 || iss.length > 0
   })
-  // quadra pela GEOMETRIA quando o bloco não trouxe o nome (maioria '?')
+  // quadra quando o bloco não trouxe o nome (maioria '?'): 1º por POLÍGONO+texto "QUADRA X" (Cruz Alta),
+  // 2º por VIZINHANÇA (Guaíba). Reordena por quadra (natural: A<B<I1<I2 ou 1<2<10) e depois número.
+  let quadraObjs = null
   if (lots.filter(l => l.quadra === '?').length > lots.length * 0.5) {
-    detectQuadras(lots, texts)
-    lots.sort((a, b) => { const qa = parseInt(a.quadra) || 999, qb = parseInt(b.quadra) || 999; if (qa !== qb) return qa - qb; return (parseInt(a.num) || 0) - (parseInt(b.num) || 0) })
+    quadraObjs = detectQuadrasPoly(lots, sources, texts)
+    if (!quadraObjs) detectQuadras(lots, texts)
+    lots.sort((a, b) => String(a.quadra).localeCompare(String(b.quadra), 'pt', { numeric: true }) || (parseInt(a.num) || 0) - (parseInt(b.num) || 0))
   }
 
   const byQ = {}; lots.forEach(l => { (byQ[l.quadra] = byQ[l.quadra] || []).push(l) })
@@ -261,7 +300,7 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
     }
   }
 
-  return { model, sources, lots, areaObjs, ruaObjs, streets, textosLivres, allSides, numTexts, lotLayer, numeracao, marcosMap, marcos }
+  return { model, sources, lots, areaObjs, ruaObjs, streets, textosLivres, quadraObjs, allSides, numTexts, lotLayer, numeracao, marcosMap, marcos }
 }
 
 export function lotMemorial(lot, { loteamento = '—', municipio = '—', modelo = modeloAlegrete() } = {}) {
