@@ -210,6 +210,20 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
     return { name: lbl.text.replace(/\s+/g, ' ').trim(), verts: p.verts, bulges: p.bulges || [] }
   }).filter(Boolean)
 
+  // polígonos NOMEADOS p/ o memorial de condomínio: quarteirões (camada QUADRA) e ruas (camada RUAS).
+  // deduplica por nome (contorno + hachura da mesma via/quadra) mantendo o de maior área.
+  const dedupNome = arr => { const mp = new Map(); for (const o of arr) { const a = areaWithArcs(o.verts, o.bulges || []); const e = mp.get(o.nome); if (!e || a > e.a) mp.set(o.nome, { o, a }) } return [...mp.values()].map(x => x.o) }
+  const quadraPolis = dedupNome(sources.polys.filter(p => /quadra/i.test(p.layer)).map(p => {
+    const t = texts.find(x => /^(QUADRA|QUARTEIR)/i.test(x.text) && pip([x.x, x.y], p.verts))
+    return t ? { nome: 'Quadra ' + t.text.replace(/^(QUADRA|QUARTEIR[ÃA]O)\s*/i, '').trim(), verts: p.verts, bulges: p.bulges || [] } : null
+  }).filter(Boolean))
+  const ruaPolis = dedupNome(sources.polys.filter(p => /rua|vi[áa]rio/i.test(p.layer)).map(p => {
+    const C = centroid(p.verts)
+    let t = texts.find(x => normVia(x.text) && pip([x.x, x.y], p.verts))
+    if (!t) { let bd = 1e18; for (const x of texts) { if (!normVia(x.text)) continue; const dd = Math.hypot(x.x - C[0], x.y - C[1]); if (dd < bd) { bd = dd; t = x } } }
+    return t ? { nome: normVia(t.text), verts: p.verts, bulges: p.bulges || [] } : null
+  }).filter(Boolean))
+
   const allSides = []
   lots.forEach(lot => { const vs = lot.verts; for (let i = 0; i < vs.length; i++) allSides.push({ lot, area: null, a: vs[i], b: vs[(i + 1) % vs.length] }) })
   areaObjs.forEach(ar => { for (let i = 0; i < ar.verts.length; i++) allSides.push({ lot: null, area: ar, a: ar.verts[i], b: ar.verts[(i + 1) % ar.verts.length] }) })
@@ -300,7 +314,7 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
     }
   }
 
-  return { model, sources, lots, areaObjs, ruaObjs, streets, textosLivres, quadraObjs, allSides, numTexts, lotLayer, numeracao, marcosMap, marcos }
+  return { model, sources, lots, areaObjs, ruaObjs, streets, textosLivres, quadraObjs, quadraPolis, ruaPolis, allSides, numTexts, lotLayer, numeracao, marcosMap, marcos }
 }
 
 export function lotMemorial(lot, { loteamento = '—', municipio = '—', modelo = modeloAlegrete() } = {}) {
@@ -382,4 +396,36 @@ export function areaMemorial(ar, state, { loteamento = '—', municipio = '—',
     s += (j === 0) ? d.areaEncerra : d.sep
   }
   return { nome, area, text: s }
+}
+
+// descreve o perímetro de um polígono (quarteirão/rua/área comum) confrontando com os polígonos NOMEADOS
+// ao redor (quadras, ruas, áreas) por aresta compartilhada; senão rua por geometria; senão limite externo.
+function perimetroMemorial(vs0, bg0, state, modelo, intro, area, selfNome) {
+  const d = modelo.desc
+  let vs = vs0.slice(), bg = (bg0 || []).slice()
+  if (signedArea(vs) > 0) { const r = reversePoly(vs, bg); vs = r.v; bg = r.b }
+  const pts = vs.map((v, i) => marcoLabel(state, v, i)), C = centroid(vs)
+  const conj = [...(state.quadraPolis || []), ...(state.ruaPolis || []), ...(state.areaObjs || []).map(a => ({ nome: titleArea(a.name), verts: a.verts }))]
+    .filter(o => o.verts !== vs0 && o.nome !== selfNome)
+  const nomeDe = (a, b) => { for (const o of conj) { const V = o.verts; for (let i = 0; i < V.length; i++) if (segOverlap(a, b, V[i], V[(i + 1) % V.length]) > 0.8) return o.nome } return null }
+  // 1ª passada: coleta confrontantes distintos (p/ o "circunscrito por ...")
+  const conf = vs.map((_, i) => { const j = (i + 1) % vs.length; return nomeDe(vs[i], vs[j]) || guessStreet(vs[i], vs[j], C, state.ruaObjs) || '[a definir]' })
+  const distintos = [...new Set(conf.filter(c => c !== '[a definir]'))]
+  let s = intro + (distintos.length ? ', circunscrito por ' + distintos.join(', ') : '') + ', com as seguintes medidas e confrontações em sentido ' + d.sentido + ': ' + render(d.partida, { p0: pts[0] })
+  for (let i = 0; i < vs.length; i++) {
+    const j = (i + 1) % vs.length, bl = bg[i] || 0, ai = arcInfo(vs[i], vs[j], bl)
+    const sd = { az: azimuth(vs[i], vs[j]), dist: dist(vs[i], vs[j]), arc: ai }
+    s += d.conector + 'confrontando com ' + conf[i] + medida(modelo, sd) + render(d.ate, { to: pts[j] })
+    s += (j === 0) ? d.encerra + '.' : d.sep
+  }
+  return { area, text: s }
+}
+
+// seções extras do condomínio: quarteirões, ruas e áreas de uso comum (cada uma um memorial de perímetro)
+export function condominioSecoes(state, { modelo = modeloAlegrete() } = {}) {
+  const A = (v, b) => areaWithArcs(v, b || [])
+  const quarteiroes = (state.quadraPolis || []).map(q => ({ nome: q.nome, ...perimetroMemorial(q.verts, q.bulges, state, modelo, q.nome + ': quarteirão com área privativa de ' + nb(A(q.verts, q.bulges), 2) + ' m² (' + areaExtenso(A(q.verts, q.bulges)) + ')', A(q.verts, q.bulges), q.nome) }))
+  const ruas = (state.ruaPolis || []).map(r => ({ nome: r.nome, ...perimetroMemorial(r.verts, r.bulges, state, modelo, r.nome + ': área destinada ao sistema viário, com área total de ' + nb(A(r.verts, r.bulges), 2) + ' m² (' + areaExtenso(A(r.verts, r.bulges)) + ')', A(r.verts, r.bulges), r.nome) }))
+  const areas = (state.areaObjs || []).map(a => ({ nome: titleArea(a.name), ...perimetroMemorial(a.verts, a.bulges, state, modelo, titleArea(a.name) + ': área de uso comum com área total de ' + nb(A(a.verts, a.bulges), 2) + ' m² (' + areaExtenso(A(a.verts, a.bulges)) + ')', A(a.verts, a.bulges), titleArea(a.name)) }))
+  return { quarteiroes, ruas, areas }
 }

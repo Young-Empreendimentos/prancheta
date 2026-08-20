@@ -3,7 +3,7 @@ import {
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
   WidthType, AlignmentType, BorderStyle,
 } from 'docx'
-import { lotMemorial, computeQuadroAreas, buildGleba, glebaMemorial, areaMemorial } from '../engine/loteamento.js'
+import { lotMemorial, computeQuadroAreas, buildGleba, glebaMemorial, areaMemorial, condominioSecoes } from '../engine/loteamento.js'
 import { nb } from '../engine/extenso.js'
 import { modeloAlegrete } from '../models/modelo.js'
 
@@ -93,8 +93,14 @@ export function buildMemoriaisDoc(state, opts) {
       children.push(memorialPar(glebaMemorial(gleba, opts.glebaConf || {}, mopts), fmt))
     }
   }
-  if (sec.publicas && state.areaObjs.length) {
-    children.push(quadraHead(cond ? 'ÁREAS COMUNS' : 'ÁREAS PÚBLICAS', fmt))
+  if (cond) {
+    // condomínio: descreve quarteirões e ruas (polígonos) — seções que o loteamento não tem
+    const s = condominioSecoes(state, mopts)
+    if (s.quarteiroes.length) { children.push(quadraHead('DESCRIÇÃO DOS QUARTEIRÕES', fmt)); for (const q of s.quarteiroes) children.push(memorialPar(q.text, fmt)) }
+    if (s.ruas.length) { children.push(quadraHead('DESCRIÇÃO DAS RUAS', fmt)); for (const r of s.ruas) children.push(memorialPar(r.text, fmt)) }
+    if (sec.publicas && s.areas.length) { children.push(quadraHead('ÁREAS DE USO COMUM', fmt)); for (const a of s.areas) children.push(memorialPar(a.text, fmt)) }
+  } else if (sec.publicas && state.areaObjs.length) {
+    children.push(quadraHead('ÁREAS PÚBLICAS', fmt))
     for (const ar of state.areaObjs) children.push(memorialPar(areaMemorial(ar, state, mopts).text, fmt))
   }
   if (sec.lotes) {
