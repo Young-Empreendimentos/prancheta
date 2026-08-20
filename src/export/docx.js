@@ -4,8 +4,8 @@ import {
   WidthType, AlignmentType, BorderStyle,
 } from 'docx'
 import { lotMemorial, computeQuadroAreas, buildGleba, glebaMemorial, areaMemorial, condominioSecoes } from '../engine/loteamento.js'
-import { nb } from '../engine/extenso.js'
-import { modeloAlegrete } from '../models/modelo.js'
+import { nb, areaExtenso } from '../engine/extenso.js'
+import { modeloAlegrete, render } from '../models/modelo.js'
 
 const CM = 566.929 // twips por cm
 
@@ -14,6 +14,9 @@ function title(text, fmt) {
 }
 function quadraHead(text, fmt) {
   return new Paragraph({ spacing: { before: 220, after: 90 }, children: [new TextRun({ text, bold: true, size: fmt.size + 2, font: fmt.font })] })
+}
+function paraC(text, fmt, bold = false) {
+  return new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 120 }, children: [new TextRun({ text, bold, font: fmt.font, size: fmt.size })] })
 }
 // parágrafo do memorial: rótulo inicial ("Lote NN:", nome da área) em negrito, resto normal, justificado
 function memorialPar(text, fmt) {
@@ -76,40 +79,45 @@ export function buildMemoriaisDoc(state, opts) {
   const cond = modelo.tipo === 'condominio'
   const children = []
   children.push(title(modelo.word.titulo || 'MEMORIAL DESCRITIVO', fmt))
-  children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 240 }, children: [new TextRun({ text: `${cond ? 'Condomínio' : 'Loteamento'} ${loteamento} — ${municipio}`, bold: true, font: fmt.font, size: fmt.size })] }))
 
-  if (sec.quadro) {
-    children.push(quadraHead('QUADRO DE ÁREAS', fmt))
-    children.push(quadroAreasTable(computeQuadroAreas(state), fmt, modelo.tipo))
-    if (cond) {
-      children.push(quadraHead('QUADRO DAS FRAÇÕES IDEAIS', fmt))
-      children.push(fracoesTable(state, fmt))
-    }
-  }
-  if (sec.gleba) {
-    const gleba = buildGleba(state)
-    if (gleba) {
-      children.push(quadraHead(cond ? 'MEMORIAL DA GLEBA (MATRÍCULA-MÃE)' : 'MEMORIAL DA GLEBA', fmt))
-      children.push(memorialPar(glebaMemorial(gleba, opts.glebaConf || {}, mopts), fmt))
-    }
-  }
   if (cond) {
-    // condomínio: descreve quarteirões e ruas (polígonos) — seções que o loteamento não tem
+    // CONDOMÍNIO — estrutura do modelo Cruz Alta: preâmbulo + 4 seções numeradas + assinatura (sem tabelas/gleba)
+    children.push(paraC('CONDOMÍNIO "' + loteamento + '"', fmt, true))
+    const dd = modelo.dados || {}, gleba = computeQuadroAreas(state).gleba || 0
+    children.push(memorialPar(render(modelo.desc.preambulo || '', {
+      loteamento, municipio, gleba: nb(gleba, 2), glebaExt: areaExtenso(gleba),
+      matricula: dd.matricula || '[nº da matrícula]', comarca: dd.comarca || (municipio.split('/')[0] || municipio).trim(),
+      proprietario: dd.proprietario || '[proprietário]', cnpj: dd.cnpj || '[CNPJ]',
+    }), fmt))
     const s = condominioSecoes(state, mopts)
-    if (s.quarteiroes.length) { children.push(quadraHead('DESCRIÇÃO DOS QUARTEIRÕES', fmt)); for (const q of s.quarteiroes) children.push(memorialPar(q.text, fmt)) }
-    if (s.ruas.length) { children.push(quadraHead('DESCRIÇÃO DAS RUAS', fmt)); for (const r of s.ruas) children.push(memorialPar(r.text, fmt)) }
-    if (sec.publicas && s.areas.length) { children.push(quadraHead('ÁREAS DE USO COMUM', fmt)); for (const a of s.areas) children.push(memorialPar(a.text, fmt)) }
-  } else if (sec.publicas && state.areaObjs.length) {
-    children.push(quadraHead('ÁREAS PÚBLICAS', fmt))
-    for (const ar of state.areaObjs) children.push(memorialPar(areaMemorial(ar, state, mopts).text, fmt))
-  }
-  if (sec.lotes) {
-    children.push(new Paragraph({ spacing: { before: 120 }, children: [] }))
-    children.push(quadraHead(cond ? 'MEMORIAIS DAS UNIDADES AUTÔNOMAS' : 'MEMORIAIS DOS LOTES', fmt))
-    let curQ = null
-    for (const lot of state.lots) {
-      if (lot.quadra !== curQ) { curQ = lot.quadra; children.push(quadraHead('Quadra ' + String(curQ).padStart(2, '0'), fmt)) }
-      children.push(memorialPar(lotMemorial(lot, mopts), fmt))
+    if (s.quarteiroes.length) { children.push(quadraHead('1. DESCRIÇÃO DOS QUARTEIRÕES', fmt)); for (const x of s.quarteiroes) children.push(memorialPar(x.text, fmt)) }
+    if (s.ruas.length) { children.push(quadraHead('2. DESCRIÇÃO DAS RUAS', fmt)); for (const x of s.ruas) children.push(memorialPar(x.text, fmt)) }
+    if (s.areas.length) { children.push(quadraHead('3. DESCRIÇÃO DAS ÁREAS DE USO COMUM', fmt)); for (const x of s.areas) children.push(memorialPar(x.text, fmt)) }
+    if (sec.lotes) {
+      children.push(quadraHead('4. DESCRIÇÃO DOS LOTES', fmt))
+      let curQ = null
+      for (const lot of state.lots) { if (lot.quadra !== curQ) { curQ = lot.quadra; children.push(quadraHead('QUADRA ' + curQ, fmt)) } children.push(memorialPar(lotMemorial(lot, mopts), fmt)) }
+    }
+    const cidade = (municipio.split('/')[0] || municipio).trim()
+    children.push(new Paragraph({ spacing: { before: 360 }, children: [new TextRun({ text: `${cidade}, ${dd.data || '[data]'}.`, font: fmt.font, size: fmt.size })] }))
+    children.push(paraC('_________________________________________', fmt))
+    children.push(paraC(dd.proprietario || '[proprietário]', fmt, true))
+    children.push(paraC('CNPJ: ' + (dd.cnpj || '[CNPJ]'), fmt))
+    children.push(paraC('_________________________________________', fmt))
+    children.push(paraC(dd.responsavel || '[responsável técnico]', fmt, true))
+    children.push(paraC(dd.titulo || 'Arquiteta e Urbanista', fmt))
+    children.push(paraC('CAU: ' + (dd.cau || '[CAU]'), fmt))
+  } else {
+    // LOTEAMENTO — como já era (quadro + gleba + áreas públicas + lotes)
+    children.push(paraC(`Loteamento ${loteamento} — ${municipio}`, fmt, true))
+    if (sec.quadro) { children.push(quadraHead('QUADRO DE ÁREAS', fmt)); children.push(quadroAreasTable(computeQuadroAreas(state), fmt, modelo.tipo)) }
+    if (sec.gleba) { const gleba = buildGleba(state); if (gleba) { children.push(quadraHead('MEMORIAL DA GLEBA', fmt)); children.push(memorialPar(glebaMemorial(gleba, opts.glebaConf || {}, mopts), fmt)) } }
+    if (sec.publicas && state.areaObjs.length) { children.push(quadraHead('ÁREAS PÚBLICAS', fmt)); for (const ar of state.areaObjs) children.push(memorialPar(areaMemorial(ar, state, mopts).text, fmt)) }
+    if (sec.lotes) {
+      children.push(new Paragraph({ spacing: { before: 120 }, children: [] }))
+      children.push(quadraHead('MEMORIAIS DOS LOTES', fmt))
+      let curQ = null
+      for (const lot of state.lots) { if (lot.quadra !== curQ) { curQ = lot.quadra; children.push(quadraHead('Quadra ' + String(curQ).padStart(2, '0'), fmt)) } children.push(memorialPar(lotMemorial(lot, mopts), fmt)) }
     }
   }
 

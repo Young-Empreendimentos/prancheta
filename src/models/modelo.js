@@ -20,6 +20,8 @@ export function novoModeloBase(cidade = '', uf = '', tipo = 'loteamento') {
     secoes: { lotes: true, gleba: true, publicas: true, quadro: true },
     word: { fonte: 'Times New Roman', tamanhoPt: 12, margemCm: 2.5, titulo: 'MEMORIAL DESCRITIVO' },
     confrontacoes: [],  // confrontações de limite reutilizáveis (ex.: "Terras de Fulano", "Estrada Municipal")
+    // dados do empreendimento (usados no preâmbulo e assinatura do condomínio) — a arquiteta preenche por projeto
+    dados: { matricula: '', comarca: '', proprietario: '', cnpj: '', responsavel: '', titulo: 'Arquiteta e Urbanista', cau: '', data: '' },
     desc: descPadrao(tipo),
   }
 }
@@ -67,6 +69,8 @@ function descPadrao(tipo = 'loteamento') {
       ? '{nome}: área comum do Condomínio "{loteamento}" com {area} m² ({extenso}), município de {municipio}, com o seguinte perímetro, no sentido {sentido}: Inicia-se no marco {p0}; '
       : '{nome}: área pública com {area} m² ({extenso}), integrante do Loteamento "{loteamento}", município de {municipio}, com o seguinte perímetro, no sentido {sentido}: Inicia-se no marco {p0}; ',
     areaEncerra: ', marco inicial, fechando o perímetro.',
+    // condomínio: preâmbulo (finalidade + gleba + matrícula + proprietário)
+    preambulo: 'O presente memorial tem por finalidade descrever o parcelamento de solo de acordo com o projeto denominado "{loteamento}", em uma gleba de terras situada na cidade de {municipio}, com área superficial de {gleba} m² ({glebaExt}), objeto da matrícula sob nº {matricula} do Cartório de Registro de Imóveis da Comarca de {comarca}, de propriedade de {proprietario}, inscrita no CNPJ {cnpj}. Segue abaixo a descrição do empreendimento.',
   }
 }
 
