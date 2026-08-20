@@ -10,7 +10,7 @@ import { modeloAlegrete, render } from '../models/modelo.js'
 // cláusula de medida (azimute / rumo / ambos / arco) conforme o modelo
 function medida(modelo, sd) {
   const d = modelo.desc
-  if (sd.arc && sd.arc.arc) return render(d.medidaArco, { dir: sd.arc.dir, raio: nb(sd.arc.raio, 2), desenv: nb(sd.arc.desenv, 2) })
+  if (sd.arc && sd.arc.arc) return render(d.medidaArco, { dir: sd.arc.dir, raio: nb(sd.arc.raio, 2), desenv: nb(sd.arc.desenv, 2), az: toGMS(sd.az), corda: nb(sd.dist, 2) })
   const vars = { az: toGMS(sd.az), quad: quad(sd.az), rumo: toRumo(sd.az), dist: nb(sd.dist, 2) }
   if (modelo.angulo === 'rumo') return render(d.medidaRumo, vars)
   if (modelo.angulo === 'ambos') return render(d.medidaAmbos, vars)
@@ -19,13 +19,14 @@ function medida(modelo, sd) {
 // cláusula de confrontação conforme o tipo de lado e o modelo
 function confClause(modelo, sd) {
   const c = modelo.desc.conf, cond = modelo.tipo === 'condominio', termo = modelo.termoUnidade || 'Lote'
-  const lc = s => cond ? String(s).replace(/^Lote\b/, termo) : s   // "Lote 04" -> "Unidade Autônoma 04" em condomínio
+  const lc = s => cond ? String(s).replace(/^Lote\b/, termo) : s   // "Lote 04" -> termo em condomínio
+  const art = /unidade|quadra/i.test(termo) ? 'a' : 'o'           // artigo conforme o gênero do termo
   if (sd.kind === 'rua') return render(c.rua, { c: sd.conf })
-  if (sd.kind === 'lote') return render(c.lote, { c: lc(sd.conf) })
+  if (sd.kind === 'lote') return render(c.lote, { art, c: lc(sd.conf) })
   if (sd.kind === 'area') return render(c.area, { c: sd.conf })
   if (sd.kind === 'perimetro') return render(c.perimetro, { c: sd.val || (cond ? '[limite do condomínio — definir vizinho]' : '[limite do loteamento — definir vizinho]') })
   if (sd.kind === 'wd') return c.wd
-  return render(c.lote, { c: lc(sd.conf) })
+  return render(c.lote, { art, c: lc(sd.conf) })
 }
 
 function insertTf(e, parent, blocks) {
@@ -238,9 +239,11 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
   const byQ = {}; lots.forEach(l => { (byQ[l.quadra] = byQ[l.quadra] || []).push(l) })
   Object.values(byQ).forEach(arr => { const a = arr.map(l => l.area).sort((x, y) => x - y); const med = a[Math.floor(a.length / 2)] || 0; arr.forEach(l => { if (med > 0 && (l.area < med * 0.4 || l.area > med * 2.5)) { l.issues.push('área destoa da quadra'); l.warn = true } }) })
 
-  // fração ideal (condomínio): proporção da área privativa da unidade sobre o total das unidades
+  // fração ideal (condomínio): proporção da área da unidade sobre o total das unidades (= área total/gleba).
+  // área comum do lote = fração × (gleba − Σ privativas); área total = privativa + comum. (deduzido do Cruz Alta)
   const somaPriv = lots.reduce((a, l) => a + l.area, 0) || 1
-  lots.forEach(l => { l.fracaoIdeal = l.area / somaPriv })
+  const comumTotal = glebaP ? Math.max(0, glebaP.area - somaPriv) : 0
+  lots.forEach(l => { l.fracaoIdeal = l.area / somaPriv; l.areaComum = comumTotal * l.fracaoIdeal; l.areaTotal = l.area + l.areaComum })
 
   // NUMERAÇÃO DE MARCOS: 'gerar' = contínua 1..N, percorrendo lote a lote no sentido horário a partir da
   // frente (ordem de lot.sides), reaproveitando cantos compartilhados; depois sobras de gleba/áreas.
@@ -262,17 +265,24 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
 }
 
 export function lotMemorial(lot, { loteamento = '—', municipio = '—', modelo = modeloAlegrete() } = {}) {
-  const d = modelo.desc, comMarco = modelo.marcos.exige !== false
+  const d = modelo.desc, comMarco = modelo.marcos.exige !== false, cond = modelo.tipo === 'condominio'
   const unidade = modelo.termoUnidade || 'Lote'
-  const fracao = lot.fracaoIdeal != null ? nb(lot.fracaoIdeal * 100, 4) + '%' : '—'
-  let s = render(d.cabecalho, { unidade, num: lot.num, loteamento, municipio, quadra: String(lot.quadra).padStart(2, '0'), sentido: d.sentido })
+  const fracao = lot.fracaoIdeal != null ? (cond ? nb(lot.fracaoIdeal, 4) : nb(lot.fracaoIdeal * 100, 4) + '%') : '—'
+  const areaComum = lot.areaComum || 0, areaTotal = lot.areaTotal || lot.area
+  let s = render(d.cabecalho, {
+    unidade, num: lot.num, loteamento, municipio, quadra: String(lot.quadra).padStart(2, '0'), sentido: d.sentido,
+    priv: nb(lot.area, 2), privExt: areaExtenso(lot.area), comum: nb(areaComum, 2), comumExt: areaExtenso(areaComum),
+    total: nb(areaTotal, 2), totalExt: areaExtenso(areaTotal), fracao,
+  })
   s += comMarco ? render(d.partida, { p0: lot.sides[0].from }) : d.partidaSemMarco
+  const n = lot.sides.length
   lot.sides.forEach((sd, k) => {
     const ate = comMarco ? render(d.ate, { to: sd.to }) : d.ateSemMarco
     s += d.conector + confClause(modelo, sd) + medida(modelo, sd) + ate
-    s += (k === lot.sides.length - 1) ? d.encerra + d.sep : d.sep
+    s += (k === n - 1) ? d.encerra : d.sep
   })
-  s += render(d.fechamento, { area: nb(lot.area, 2), extenso: areaExtenso(lot.area), fracao })
+  s += d.fechamento ? (d.sep + render(d.fechamento, { area: nb(lot.area, 2), extenso: areaExtenso(lot.area), fracao })) : '.'
+  if (cond && d.esquina) { const ruas = lot.sides.filter(x => x.kind === 'rua').map(x => x.conf); if (ruas.length >= 2) s += render(d.esquina, { r1: ruas[0], r2: ruas[1] }) }
   return s
 }
 

@@ -21,7 +21,8 @@ export function extenso(n) {
   return r.join(' ')
 }
 export function areaExtenso(a) {
-  const m2 = Math.floor(a), dm2 = Math.round((a - m2) * 100)
+  const cents = Math.round(a * 100)                    // total em dm² (arredonda igual ao nb, evita "...cem dm²")
+  const m2 = Math.floor(cents / 100), dm2 = cents % 100
   let s = extenso(m2) + (m2 === 1 ? ' metro quadrado' : ' metros quadrados')
   if (dm2 > 0) s += ' e ' + extenso(dm2) + (dm2 === 1 ? ' decímetro quadrado' : ' decímetros quadrados')
   return s

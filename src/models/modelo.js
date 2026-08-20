@@ -30,29 +30,31 @@ function descPadrao(tipo = 'loteamento') {
     sentido: 'horário',
     conector: 'deste ponto segue ',
     cabecalho: cond
-      ? '{unidade} {num}: Um terreno integrante do Condomínio "{loteamento}", no município de {municipio}, situado na Quadra {quadra}, com as seguintes medidas e confrontações em sentido {sentido}: '
+      ? '{unidade} {num}: Uma unidade autônoma, situada na quadra {quadra}, no Condomínio "{loteamento}", cidade de {municipio}, com área privativa de {priv} m² ({privExt}), área real de uso comum de {comum} m² ({comumExt}), área real total de {total} m² ({totalExt}), correspondendo-lhe uma fração ideal equivalente a {fracao}, com as seguintes medidas e confrontações em sentido {sentido}: '
       : '{unidade} {num}: Um terreno urbano localizado no Loteamento "{loteamento}", no município de {municipio}, situado na Quadra {quadra}, com as seguintes medidas e confrontações em sentido {sentido}: ',
     partida: 'Partindo do ponto {p0}; ',
     partidaSemMarco: cond ? 'Inicia-se a descrição pela frente da unidade, ' : 'Inicia-se a descrição pela frente do lote, ',
     conf: {
       rua: cond ? 'confrontando com a {c}' : 'no alinhamento com a {c}',   // condomínio: via interna é área comum
-      lote: cond ? 'confrontando com a {c}' : 'confrontando com o {c}',     // "a Unidade" (fem.) vs "o Lote" (masc.)
+      lote: 'confrontando com {art} {c}',                                  // {art} = o/a conforme o termo (Lote/Unidade)
       area: 'confrontando com a {c}',
       perimetro: 'confrontando com {c}',
       wd: 'confrontando com [A DEFINIR]',
     },
-    medidaAz: ', com azimute de {az}, sentido {quad} e distância de {dist} m',
+    medidaAz: cond ? ', com azimute de {az} e distância de {dist} m' : ', com azimute de {az}, sentido {quad} e distância de {dist} m',
     medidaRumo: ', com rumo de {rumo} e distância de {dist} m',
     medidaAmbos: ', com azimute de {az} (rumo {rumo}) e distância de {dist} m',
-    medidaArco: ', por uma curva à {dir} com raio de {raio} m e desenvolvimento de {desenv} m',
+    medidaArco: cond
+      ? ', por uma curva de comprimento aproximado de {desenv} m e raio de {raio} m, com azimute de {az} e distância em linha reta de {corda} m'
+      : ', por uma curva à {dir} com raio de {raio} m e desenvolvimento de {desenv} m',
     coord: ' (N {N} m, E {E} m)',                              // anexado ao ponto de chegada, se coordenadas.incluir
     ate: ', até o ponto {to}',
     ateSemMarco: '',
     encerra: ', ponto inicial da descrição deste perímetro',
     sep: '; ',
-    fechamento: cond
-      ? 'perfazendo uma área privativa de {area} m² ({extenso}), correspondente à fração ideal de {fracao} nas áreas comuns do condomínio.'
-      : 'perfazendo uma área total de {area} m² ({extenso}).',
+    // condomínio: áreas e fração já vão no cabeçalho → fecho vazio (só encerra + nota de esquina)
+    fechamento: cond ? '' : 'perfazendo uma área total de {area} m² ({extenso}).',
+    esquina: ' Que fica na esquina entre a {r1} e a {r2}.',   // condomínio: nota p/ lote de esquina (2+ ruas)
     // gleba (perímetro / matrícula-mãe)
     glebaCabecalho: cond
       ? 'Gleba de terras (matrícula-mãe) com área de {area} m² ({extenso}), situada no município de {municipio}, destinada ao Condomínio "{loteamento}", com o seguinte perímetro, no sentido {sentido}: Inicia-se a descrição no marco {p0}; '
