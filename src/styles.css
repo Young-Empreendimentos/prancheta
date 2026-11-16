@@ -43,6 +43,17 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-ui);
 .btn:disabled{opacity:.5;cursor:default}
 .saved-chip{font-family:var(--font-mono);font-size:11px;color:var(--ok);display:inline-flex;align-items:center;gap:4px;padding:0 4px}
 .fields-inline select{font-family:var(--font-ui);font-size:13px;background:var(--elev);color:var(--text);border:1px solid var(--border-strong);border-radius:6px;padding:5px 8px;min-width:150px}
+.tb-div{width:1px;height:24px;background:var(--border);margin:0 2px;align-self:center}
+
+/* ---- sub-barra de navegação (seções do projeto + ferramentas) ---- */
+.subnav{display:flex;align-items:center;gap:8px 18px;flex-wrap:wrap;padding:6px 14px;background:var(--panel);border-bottom:1px solid var(--border);flex:0 0 auto}
+.snav-group{display:flex;align-items:center;gap:5px}
+.snav-group.right{margin-left:auto}
+.snav-label{font-family:var(--font-mono);font-size:9.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--faint);margin-right:4px}
+.tab{font-family:var(--font-ui);font-size:13px;color:var(--muted);background:transparent;border:1px solid transparent;border-radius:var(--radius-sm);padding:6px 11px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;transition:background .12s,color .12s,border-color .12s}
+.tab:hover{background:var(--surface);color:var(--text);border-color:var(--border)}
+.tab.active{background:var(--accent-soft);color:var(--accent);border-color:color-mix(in srgb,var(--accent) 35%,var(--border));font-weight:600}
+.tab-badge{font-family:var(--font-mono);font-size:10px;background:var(--warn);color:#fff;border-radius:999px;padding:1px 7px;line-height:1.5}
 
 /* ---- página de Modelos por cidade ---- */
 .modelos{display:flex;flex:1 1 auto;min-height:0}
@@ -91,6 +102,16 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-ui);
 .mp-kpis .kpi .v{font-size:19px;font-weight:680;font-family:var(--font-mono)}
 .mp-kpis .kpi .l{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
 .mp-side .back{margin-top:auto}
+.mp-block{display:flex;flex-direction:column;gap:9px;padding-bottom:14px;margin-bottom:2px;border-bottom:1px solid var(--border)}
+.mp-flabel{font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+.mp-chk{display:flex;align-items:flex-start;gap:9px;padding:9px 11px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--elev);cursor:pointer;transition:border-color .1s,background .1s}
+.mp-chk:hover{border-color:var(--accent)}
+.mp-chk.on{border-color:var(--accent);background:var(--accent-soft)}
+.mp-chk input{margin-top:2px;flex:0 0 auto;accent-color:var(--accent)}
+.mp-chk span{display:flex;flex-direction:column;gap:1px;font-size:13.5px;font-weight:600}
+.mp-chk small{font-weight:400;font-size:11px;color:var(--muted)}
+.mp-exp{margin-top:4px}
+.mp-hint2{font-size:11px;color:var(--faint);line-height:1.45;margin:2px 0 0}
 .mp-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;padding:14px 16px;gap:12px;overflow:hidden}
 .mp-main .viewer{height:52%;flex:0 0 auto;margin-bottom:0}
 .mp-tblwrap{flex:1 1 auto;overflow:auto;border:1px solid var(--border);border-radius:var(--radius-sm)}
@@ -104,6 +125,9 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-ui);
 .es-icon{font-size:40px;margin-bottom:8px}
 .es-card h2{margin:0 0 10px;font-size:20px}
 .es-card p{color:var(--muted);font-size:14px;margin:0 0 22px}
+.es-steps{list-style:none;margin:24px 0 0;padding:18px 0 0;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:9px;text-align:left}
+.es-steps li{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted)}
+.es-steps li b{flex:0 0 auto;width:21px;height:21px;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-family:var(--font-mono);font-size:11px;display:inline-flex;align-items:center;justify-content:center;font-weight:600}
 
 .workspace{display:flex;flex:1 1 auto;min-height:0}
 .panel{flex:0 0 372px;width:372px;background:var(--panel);border-right:1px solid var(--border);overflow-y:auto;display:flex;flex-direction:column}

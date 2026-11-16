@@ -133,20 +133,33 @@ export default function App() {
           </label>
           <div className="fields-inline">Loteamento <span className="field-ro">{loteamento}</span></div>
           <div className="fields-inline">Município <span className="field-ro">{municipio}</span></div>
-          <button className="btn" onClick={() => setView('modelos')}>⚙ Modelos</button>
-          <button className="btn" onClick={() => setView('marcos')}>◉ Marcos</button>
+          <button className="btn" onClick={() => setView('modelos')} title="Definir a redação do memorial por cidade/cartório">⚙ Modelos</button>
+          <span className="tb-div" />
           {state && <>
-            <button className="btn" onClick={() => setModal('conferencia')}>Conferência</button>
-            <button className="btn" onClick={() => setModal('quadro')}>Quadro de áreas</button>
-            <button className="btn" onClick={() => setModal('gleba')}>Gleba</button>
-            <button className="btn" onClick={() => setModal('vias')}>Vias e áreas</button>
-            <button className="btn" onClick={onExport} disabled={exporting}>{exporting ? 'Gerando…' : '⬇ Word'}</button>
+            <button className="btn primary" onClick={onExport} disabled={exporting}>{exporting ? 'Gerando…' : '⬇ Word'}</button>
             <button className="btn" onClick={novoProjeto} title="Fechar e limpar o projeto atual">Novo</button>
             {salvo && <span className="saved-chip" title="Salvo automaticamente neste navegador">✓ salvo</span>}
           </>}
-          <label className="btn primary">Abrir .dxf<input type="file" accept=".dxf,.txt" hidden onChange={onFile} /></label>
+          <label className={'btn' + (state ? '' : ' primary')}>Abrir .dxf<input type="file" accept=".dxf,.txt" hidden onChange={onFile} /></label>
         </div>
       </header>
+
+      {state && (
+        <nav className="subnav">
+          <span className="snav-group">
+            <span className="snav-label">Projeto</span>
+            <button className={'tab' + (!modal ? ' active' : '')} onClick={() => setModal(null)}>Lotes</button>
+            <button className={'tab' + (modal === 'gleba' ? ' active' : '')} onClick={() => setModal('gleba')}>Gleba</button>
+            <button className={'tab' + (modal === 'vias' ? ' active' : '')} onClick={() => setModal('vias')}>Vias e áreas</button>
+            <button className={'tab' + (modal === 'quadro' ? ' active' : '')} onClick={() => setModal('quadro')}>Quadro de áreas</button>
+            <button className={'tab' + (modal === 'conferencia' ? ' active' : '')} onClick={() => setModal('conferencia')}>Conferência{nPend > 0 && <span className="tab-badge">{nPend}</span>}</button>
+          </span>
+          <span className="snav-group right">
+            <span className="snav-label">Ferramentas</span>
+            <button className="tab" onClick={() => setView('marcos')}>◉ Marcos &amp; exportar DXF</button>
+          </span>
+        </nav>
+      )}
 
       {erro && <div className="banner">{erro}</div>}
 
@@ -157,6 +170,12 @@ export default function App() {
             <h2>Abra o DXF do loteamento</h2>
             <p>A ferramenta lê o desenho e gera o memorial descritivo de cada lote, da gleba e das áreas públicas — com as confrontações identificadas automaticamente.</p>
             <label className="btn primary lg">Abrir arquivo .dxf<input type="file" accept=".dxf,.txt" hidden onChange={onFile} /></label>
+            <ol className="es-steps">
+              <li><b>1</b> Abra o DXF do loteamento</li>
+              <li><b>2</b> Revise os lotes e defina as confrontações pendentes</li>
+              <li><b>3</b> Numere os marcos</li>
+              <li><b>4</b> Exporte o memorial (Word) e a planta (DXF)</li>
+            </ol>
           </div>
         </main>
       ) : (
