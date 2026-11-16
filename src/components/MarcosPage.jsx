@@ -7,8 +7,8 @@ export default function MarcosPage({ state, numeracao, setNumeracao, loteamento 
   const gerado = numeracao === 'gerar' && state?.marcos
   const marcos = state?.marcos || []
   // o que incluir no DXF (independentes). Marcos (pontos) exigem a numeração gerada.
-  const [inc, setInc] = useState({ marcos: true, azimute: false, cota: false })
-  const nadaSelecionado = !inc.marcos && !inc.azimute && !inc.cota
+  const [inc, setInc] = useState({ marcos: true, rotulo: true, azimute: false, cota: false })
+  const nadaSelecionado = !inc.marcos && !inc.rotulo && !inc.azimute && !inc.cota
 
   function toggle(key) {
     const next = { ...inc, [key]: !inc[key] }
@@ -18,7 +18,7 @@ export default function MarcosPage({ state, numeracao, setNumeracao, loteamento 
   }
 
   function exportarDXF() {
-    const opts = { marcos: inc.marcos, azimute: inc.azimute, cota: inc.cota }
+    const opts = { marcos: inc.marcos, rotulo: inc.rotulo, azimute: inc.azimute, cota: inc.cota }
     if (dxfRaw) exportPlantaMarcosDxf(dxfRaw, state, loteamento, opts)
     else exportMarcosDxf(state, loteamento, opts)
   }
@@ -60,6 +60,10 @@ export default function MarcosPage({ state, numeracao, setNumeracao, loteamento 
               <label className={'mp-chk' + (inc.marcos ? ' on' : '')}>
                 <input type="checkbox" checked={inc.marcos} onChange={() => toggle('marcos')} />
                 <span>Marcos <small>pontos numerados (camada MARCOS)</small></span>
+              </label>
+              <label className={'mp-chk' + (inc.rotulo ? ' on' : '')}>
+                <input type="checkbox" checked={inc.rotulo} onChange={() => toggle('rotulo')} />
+                <span>Nº + área do lote <small>no centro, alinhado à face maior (camada ROTULO)</small></span>
               </label>
               <label className={'mp-chk' + (inc.azimute ? ' on' : '')}>
                 <input type="checkbox" checked={inc.azimute} onChange={() => toggle('azimute')} />

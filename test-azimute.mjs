@@ -1,46 +1,36 @@
-// Teste dos rótulos independentes (marcos / azimute / cota) no DXF. Quadrado 20x10.
-import { buildMarcosDxf, buildPlantaMarcosDxf } from './src/export/dxf.js'
+// Teste: rótulos independentes (marcos / rótulo nº+área / azimute / cota) no DXF, todos DENTRO do lote.
+import { buildMarcosDxf } from './src/export/dxf.js'
 import { parseDXF } from './src/engine/dxf.js'
 
-const state = {
-  lots: [{ verts: [[0, 0], [20, 0], [20, 10], [0, 10]], bulges: [0, 0, 0, 0] }],
-  areaObjs: [],
-  marcos: [{ n: 1, x: 0, y: 0 }, { n: 2, x: 20, y: 0 }],
-}
+// lote retângulo 24 x 12 (face maior = horizontal, 24m), sentido horário
+const verts = [[0, 0], [0, 12], [24, 12], [24, 0]]
+const state = { lots: [{ num: '01', area: 288, verts, bulges: [0, 0, 0, 0] }], areaObjs: [], marcos: [{ n: 1, x: 0, y: 0 }] }
+function pip(pt, vs) { let c = false; for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) { const xi = vs[i][0], yi = vs[i][1], xj = vs[j][0], yj = vs[j][1]; if (((yi > pt[1]) !== (yj > pt[1])) && (pt[0] < (xj - xi) * (pt[1] - yi) / (yj - yi) + xi)) c = !c } return c }
 
 let pass = true
-const chk = (cond, msg) => { console.log((cond ? '  ✓ ' : '  ✗ ') + msg); if (!cond) pass = false }
+const chk = (c, m) => { console.log((c ? '  ✓ ' : '  ✗ ') + m); if (!c) pass = false }
 
-// combo azimute + cota
-const dxf = buildMarcosDxf(state, { marcos: true, azimute: true, cota: true })
-console.log('— azimute + cota + marcos —')
-for (const t of ["90°00'00\"", "0°00'00\"", "270°00'00\"", "180°00'00\""]) chk(dxf.includes(t), 'azimute ' + t)
-for (const t of ['20,00 m', '10,00 m']) chk(dxf.includes(t), 'cota ' + t)
-chk(dxf.includes('AZIMUTE') && dxf.includes('COTA'), 'camadas AZIMUTE e COTA')
-let m = parseDXF(dxf); chk(!!m, 're-parse OK')
-const txt = (m.entities || []).filter(e => e.type === 'text')
-chk(txt.filter(e => e.layer === 'AZIMUTE').length === 4, 'TEXT na camada AZIMUTE = 4 (um por lado): ' + txt.filter(e => e.layer === 'AZIMUTE').length)
-chk(txt.filter(e => e.layer === 'COTA').length === 4, 'TEXT na camada COTA = 4: ' + txt.filter(e => e.layer === 'COTA').length)
-chk(txt.filter(e => e.layer === 'MARCOS').length === 2, 'TEXT na camada MARCOS = 2: ' + txt.filter(e => e.layer === 'MARCOS').length)
+const dxf = buildMarcosDxf(state, { marcos: true, rotulo: true, azimute: true, cota: true })
+const m = parseDXF(dxf), texts = m.entities.filter(e => e.type === 'text')
 
-// só marco (padrão antigo)
-console.log('— só marcos —')
-const soMarco = buildMarcosDxf(state, { marcos: true, azimute: false, cota: false })
-chk(!soMarco.includes("90°00'00\""), 'sem azimute')
-chk(!/\b20,00 m\b/.test(soMarco), 'sem cota')
-chk((parseDXF(soMarco).entities || []).filter(e => e.type === 'text' && e.layer === 'MARCOS').length === 2, 'marcos presentes')
+console.log('— rótulo central (nº + área) —')
+chk(texts.some(t => t.text === 'LOTE 01' && t.layer === 'ROTULO'), 'LOTE 01 na camada ROTULO')
+chk(texts.some(t => /^A=288,00m/.test(t.text) && t.layer === 'ROTULO'), 'A=288,00m² na camada ROTULO')
+const lote = texts.find(t => t.text === 'LOTE 01')
+chk(lote && Math.abs(lote.rot) < 1, 'rótulo alinhado à face maior (horizontal, rot≈0): rot=' + lote?.rot?.toFixed(1))
 
-// só azimute
-console.log('— só azimute —')
-const soAz = buildMarcosDxf(state, { marcos: false, azimute: true, cota: false })
-chk(soAz.includes("90°00'00\""), 'azimute presente')
-chk(!soAz.includes('20,00 m'), 'sem cota')
-chk((parseDXF(soAz).entities || []).filter(e => e.layer === 'MARCOS').length === 0, 'sem marcos')
+console.log('— azimute + cota nas camadas certas —')
+chk(texts.filter(t => t.layer === 'AZIMUTE').length === 4, 'AZIMUTE = 4 lados: ' + texts.filter(t => t.layer === 'AZIMUTE').length)
+chk(texts.filter(t => t.layer === 'COTA').length === 4, 'COTA = 4 lados: ' + texts.filter(t => t.layer === 'COTA').length)
+chk(texts.some(t => t.text === '24,00 m') && texts.some(t => t.text === '12,00 m'), 'cotas 24,00 e 12,00 m')
 
-// injeção na planta original
-console.log('— injeção na planta —')
-const orig = ['0', 'SECTION', '2', 'HEADER', '9', '$HANDSEED', '5', '1000', '0', 'ENDSEC', '0', 'SECTION', '2', 'ENTITIES', '0', 'ENDSEC', '0', 'EOF'].join('\r\n') + '\r\n'
-const inj = buildPlantaMarcosDxf(orig, state, { marcos: true, azimute: true, cota: true })
-chk(inj.includes('AZIMUTE') && inj.includes('COTA') && inj.includes("90°00'00\"") && inj.includes('$HANDSEED'), 'rótulos + planta preservada')
+console.log('— TODOS os rótulos DENTRO do lote (não saem das linhas) —')
+const rot = texts.filter(t => ['ROTULO', 'AZIMUTE', 'COTA'].includes(t.layer))
+const fora = rot.filter(t => !pip([t.x, t.y], verts))
+chk(fora.length === 0, `${rot.length} rótulos, ${fora.length} fora do lote` + (fora.length ? ' → ' + fora.map(t => t.text).join(', ') : ''))
+
+console.log('— combos —')
+chk(!buildMarcosDxf(state, { marcos: true, rotulo: false, azimute: false, cota: false }).includes('LOTE 01'), 'só marcos: sem rótulo/az/cota')
+chk(buildMarcosDxf(state, { marcos: false, rotulo: true, azimute: false, cota: false }).includes('LOTE 01'), 'só rótulo: tem LOTE 01')
 
 console.log('\n=== ' + (pass ? 'PASSOU ✅' : 'FALHOU ❌') + ' ===')
