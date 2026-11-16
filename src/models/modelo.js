@@ -93,6 +93,32 @@ export function modeloAlegrete() {
   return m
 }
 
+// Modelo semente: Santo Antônio da Patrulha/RS — validado contra o memorial do cartório (ângulo interno
+// + azimute plano). Vars: {card}=direção cardeal, {distExt}=distância por extenso, {angulo}=ângulo interno,
+// {bairro} (operador define em dados.bairro), {ruaFrente} (frente detectada), {ladoPar} (paridade do nº).
+export function modeloSantoAntonioPatrulha() {
+  const m = novoModeloBase('Santo Antônio da Patrulha', 'RS')
+  m.id = 'santo-antonio-da-patrulha-rs'
+  m.loteamento = 'prolongamento Ilha dos Açores'
+  m.municipio = 'Santo Antônio da Patrulha/RS'
+  m.dados.bairro = ''
+  const d = m.desc
+  d.sentido = 'horário'
+  d.conector = 'deste '
+  d.cabecalho = '{unidade} {num}: Um terreno urbano, sem benfeitorias, situado nesta cidade, no Bairro {bairro}, com frente para a {ruaFrente}, localizado no Loteamento denominado "{loteamento}", lado {ladoPar}, com a área superficial de {area} m² ({extenso}), com as seguintes dimensões e confrontações, em sentido {sentido}: '
+  d.partida = 'Partindo do Ponto {p0}; '
+  d.conf = { rua: 'confrontando com a {c}', lote: 'confrontando com {art} {c}', area: 'confrontando com a {c}', perimetro: 'confrontando com {c}', wd: 'confrontando com [A DEFINIR]' }
+  d.medidaAz = ', seguindo a {card} com a distância de {dist} m ({distExt}) e azimute plano de {az}'
+  d.anguloInterno = ', formando ângulo interno de {angulo}'
+  d.medidaArco = ', seguindo a {card} com a distância em linha reta de {corda} m ({cordaExt}) e azimute plano de {az}, formando um arco interno de {desenv} m ({desenvExt}) e raio de {raio} m ({raioExt})'
+  d.medidaArcoPerim = d.medidaArco
+  d.ate = ', chega-se ao Ponto {to}'
+  d.sep = '; '
+  d.encerra = '; inicial da descrição deste perímetro.'
+  d.fechamento = ''
+  return m
+}
+
 // substitui {token} por vars[token] (string vazia se ausente)
 export function render(tpl, vars) {
   return String(tpl || '').replace(/\{(\w+)\}/g, (_, k) => (vars[k] != null ? String(vars[k]) : ''))
@@ -106,6 +132,7 @@ export function listModelos() {
   let arr = []
   try { arr = JSON.parse(localStorage.getItem(KEY) || '[]') } catch { arr = [] }
   if (!arr.some(m => m.id === 'alegrete-rs')) arr = [modeloAlegrete(), ...arr]
+  if (!arr.some(m => m.id === 'santo-antonio-da-patrulha-rs')) arr = [...arr, modeloSantoAntonioPatrulha()]
   return arr
 }
 export function saveModelo(m) {

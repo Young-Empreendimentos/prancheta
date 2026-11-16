@@ -25,6 +25,19 @@ export function toRumo(az) {
   return q + ' ' + toGMS(a)
 }
 export function quadAbbr(az) { if (az < 90) return 'NE'; if (az < 180) return 'SE'; if (az < 270) return 'SO'; return 'NO' }
+// direção por extenso (capitalizada): cardeal (Norte/Leste/Sul/Oeste) quando a <=10° de um cardeal,
+// senão o quadrante diagonal (Nordeste/Sudeste/Sudoeste/Noroeste). Convenção dos memoriais SAP.
+export function direcao(az) {
+  az = ((az % 360) + 360) % 360
+  for (const [a, nome] of [[0, 'Norte'], [90, 'Leste'], [180, 'Sul'], [270, 'Oeste'], [360, 'Norte']]) if (Math.abs(az - a) <= 10) return nome
+  if (az < 90) return 'Nordeste'; if (az < 180) return 'Sudeste'; if (az < 270) return 'Sudoeste'; return 'Noroeste'
+}
+// ângulo interno no vértice i de um anel (entre os vetores i->anterior e i->seguinte), 0..180°.
+export function anguloInterno(verts, i) {
+  const n = verts.length, p = verts[(i - 1 + n) % n], c = verts[i], q = verts[(i + 1) % n]
+  const ux = p[0] - c[0], uy = p[1] - c[1], wx = q[0] - c[0], wy = q[1] - c[1]
+  return Math.atan2(Math.abs(ux * wy - uy * wx), ux * wx + uy * wy) * 180 / Math.PI
+}
 
 export function pip(pt, vs) {
   let c = false

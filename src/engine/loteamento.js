@@ -1,21 +1,27 @@
 // Motor do loteamento: detecção de lotes, confrontações automáticas (lote/área/rua), memoriais,
 // quadro de áreas, gleba e áreas públicas. Portado e validado no protótipo (determinístico, sem IA).
 import {
-  signedArea, dist, azimuth, toGMS, quad, toRumo, pip, reversePoly, arcInfo, areaWithArcs,
+  signedArea, dist, azimuth, toGMS, quad, toRumo, direcao, anguloInterno, pip, reversePoly, arcInfo, areaWithArcs,
   keyPt, sideKey, marcoKey, centroid,
 } from './geometry.js'
-import { areaExtenso, nb } from './extenso.js'
+import { areaExtenso, distExtenso, nb } from './extenso.js'
 import { modeloAlegrete, render } from '../models/modelo.js'
 
 // cláusula de medida (azimute / rumo / ambos / arco) conforme o modelo. perim=true usa o arco de perímetro
 // (quarteirão/rua/área): no condomínio, esse arco NÃO leva "e raio de ..." (como no memorial dos quarteirões).
 function medida(modelo, sd, perim) {
-  const d = modelo.desc
-  if (sd.arc && sd.arc.arc) return render((perim && d.medidaArcoPerim) || d.medidaArco, { dir: sd.arc.dir, raio: nb(sd.arc.raio, 2), desenv: nb(sd.arc.desenv, 2), az: toGMS(sd.az), corda: nb(sd.dist, 2) })
-  const vars = { az: toGMS(sd.az), quad: quad(sd.az), rumo: toRumo(sd.az), dist: nb(sd.dist, 2) }
+  const d = modelo.desc, card = direcao(sd.az)   // card = direção cardeal por extenso (Noroeste, Oeste…)
+  if (sd.arc && sd.arc.arc) return render((perim && d.medidaArcoPerim) || d.medidaArco, { dir: sd.arc.dir, card, raio: nb(sd.arc.raio, 2), raioExt: distExtenso(sd.arc.raio), desenv: nb(sd.arc.desenv, 2), desenvExt: distExtenso(sd.arc.desenv), az: toGMS(sd.az), corda: nb(sd.dist, 2), cordaExt: distExtenso(sd.dist) })
+  const vars = { az: toGMS(sd.az), quad: quad(sd.az), card, rumo: toRumo(sd.az), dist: nb(sd.dist, 2), distExt: distExtenso(sd.dist) }
   if (modelo.angulo === 'rumo') return render(d.medidaRumo, vars)
   if (modelo.angulo === 'ambos') return render(d.medidaAmbos, vars)
   return render(d.medidaAz, vars)
+}
+// cláusula de ângulo interno (só se o modelo definir desc.anguloInterno; nos trechos internos, não em arco)
+function anguloInternoClause(modelo, lot, sd, k, n) {
+  const tpl = modelo.desc.anguloInterno
+  if (!tpl || (sd.arc && sd.arc.arc) || k === 0 || k === n - 1) return ''
+  return render(tpl, { angulo: toGMS(anguloInterno(lot.verts, sd.idx)) })
 }
 // cláusula de confrontação conforme o tipo de lado e o modelo
 function confClause(modelo, sd) {
@@ -464,12 +470,16 @@ export function lotMemorial(lot, { loteamento = '—', municipio = '—', modelo
     unidade, num: lot.num, loteamento, municipio, quadra: String(lot.quadra).padStart(2, '0'), sentido: d.sentido,
     priv: nb(lot.area, 2), privExt: areaExtenso(lot.area), comum: nb(areaComum, 2), comumExt: areaExtenso(areaComum),
     total: nb(areaTotal, 2), totalExt: areaExtenso(areaTotal), fracao,
+    area: nb(lot.area, 2), extenso: areaExtenso(lot.area),              // área do lote (SAP usa no cabeçalho)
+    bairro: (modelo.dados && modelo.dados.bairro) || '[bairro]',        // operador define 1x no modelo
+    ruaFrente: lot.frente || '[rua de frente]',                         // frente detectada pela geometria
+    ladoPar: (parseInt(lot.num, 10) % 2 === 0 ? 'par' : 'ímpar'),       // paridade do nº do lote
   })
   s += comMarco ? render(d.partida, { p0: lot.sides[0].from }) : d.partidaSemMarco
   const n = lot.sides.length
   lot.sides.forEach((sd, k) => {
     const ate = comMarco ? render(d.ate, { to: sd.to }) : d.ateSemMarco
-    s += d.conector + confClause(modelo, sd) + medida(modelo, sd) + ate
+    s += d.conector + confClause(modelo, sd) + medida(modelo, sd) + anguloInternoClause(modelo, lot, sd, k, n) + ate
     s += (k === n - 1) ? d.encerra : d.sep
   })
   s += d.fechamento ? (d.sep + render(d.fechamento, { area: nb(lot.area, 2), extenso: areaExtenso(lot.area), fracao })) : '.'

@@ -27,4 +27,11 @@ export function areaExtenso(a) {
   if (dm2 > 0) s += ' e ' + extenso(dm2) + (dm2 === 1 ? ' decímetro quadrado' : ' decímetros quadrados')
   return s
 }
+// distância por extenso: "X metros e Y centímetros" (ex.: 38,90 -> "trinta e oito metros e noventa centímetros")
+export function distExtenso(d) {
+  const cents = Math.round(d * 100), m = Math.floor(cents / 100), cm = cents % 100
+  let s = extenso(m) + (m === 1 ? ' metro' : ' metros')
+  if (cm > 0) s += ' e ' + extenso(cm) + (cm === 1 ? ' centímetro' : ' centímetros')
+  return s
+}
 export const nb = (v, d) => v.toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d })
