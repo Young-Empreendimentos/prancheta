@@ -1,6 +1,5 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { decodeDXF, parseDXF } from './engine/dxf.js'
-import { idbGet, idbSet, idbDel } from './engine/idb.js'
 import { collectSources, buildLoteamento, lotMemorial, computeQuadroAreas } from './engine/loteamento.js'
 import { nb } from './engine/extenso.js'
 import { toGMS, quadAbbr } from './engine/geometry.js'
@@ -9,11 +8,31 @@ import Modal from './components/Modal.jsx'
 import Viewer from './components/Viewer.jsx'
 import ModelosPage from './components/ModelosPage.jsx'
 import MarcosPage from './components/MarcosPage.jsx'
+import Login from './components/Login.jsx'
+import ProjetosPage from './components/ProjetosPage.jsx'
 import { listModelos, getModelo, saveModelo } from './models/modelo.js'
 import { QuadroAreasPanel, GlebaPanel, ViasAreasPanel, ConferenciaPanel } from './components/panels.jsx'
+import { supabase } from './supabase.js'
+import { criarProjeto, carregarProjeto, salvarProjeto } from './cloud.js'
 
+// ---- App: porta de autenticação (login Google @young) ----
 export default function App() {
+  const [session, setSession] = useState(undefined)
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session))
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) =>
+      setSession(prev => (prev && s && prev.user?.id === s.user?.id ? prev : s)))  // não reseta no refresh de token
+    return () => sub.subscription.unsubscribe()
+  }, [])
+  if (session === undefined) return <div className="app"><main className="empty-state"><div className="detail-empty">Carregando…</div></main></div>
+  if (!session) return <div className="app"><Login /></div>
+  return <Workspace session={session} />
+}
+
+// ---- Workspace: o app em si, com projetos na nuvem ----
+function Workspace({ session }) {
   const [state, setState] = useState(null)
+  const [projetoId, setProjetoId] = useState(null)
   const [resolutions, setResolutions] = useState({})
   const [glebaConf, setGlebaConf] = useState({})
   const [fileName, setFileName] = useState('')
@@ -21,14 +40,14 @@ export default function App() {
   const [modal, setModal] = useState(null)
   const [erro, setErro] = useState('')
   const [exporting, setExporting] = useState(false)
-  const [view, setView] = useState('memorial')
+  const [view, setView] = useState('projetos')   // projetos | memorial | modelos | marcos
   const [numeracao, setNumeracaoState] = useState('dxf')
   const [dxfRaw, setDxfRaw] = useState('')
-  const [salvo, setSalvo] = useState(false)
+  const [salvo, setSalvo] = useState(true)
   const [modelos, setModelos] = useState(() => listModelos())
   const [modeloId, setModeloId] = useState('alegrete-rs')
   const modelo = useMemo(() => getModelo(modeloId), [modeloId, modelos])
-  const loteamento = modelo.loteamento || '—'   // puxado do modelo (editável em ⚙ Modelos, não aqui)
+  const loteamento = modelo.loteamento || '—'
   const municipio = modelo.municipio || '—'
   const opts = { loteamento, municipio, modelo }
 
@@ -37,69 +56,65 @@ export default function App() {
     setState(s => s ? buildLoteamento(s.model, s.sources, { resolutions, numeracao: mode, lotLayer: s.lotLayer }) : s)
   }
 
-  // restaura a última sessão ao abrir (DXF + edições salvos no navegador)
+  // AUTO-SAVE na nuvem: toda edição do projeto aberto vai sendo salva (debounce). Espelho síncrono
+  // em localStorage por projeto garante que nada se perde nem se fechar a aba no meio.
   useEffect(() => {
-    (async () => {
-      const d = await idbGet('dxf'); if (!d || !d.dxfRaw) return
-      // edições: prefere o espelho síncrono do localStorage (mais fresco), senão o IndexedDB
-      let e = null
-      try { e = JSON.parse(localStorage.getItem('prancheta-edits') || 'null') } catch { e = null }
-      if (!e) e = await idbGet('edits')
-      e = e || {}
-      try {
-        const model = parseDXF(d.dxfRaw), sources = collectSources(model)
-        const st = buildLoteamento(model, sources, { resolutions: e.resolutions || {}, numeracao: e.numeracao || 'dxf' })
-        setState(st); setResolutions(e.resolutions || {}); setGlebaConf(e.glebaConf || {})
-        setNumeracaoState(e.numeracao || 'dxf'); if (e.modeloId) setModeloId(e.modeloId)
-        setFileName(d.fileName || ''); setSel(e.sel ?? -1); setDxfRaw(d.dxfRaw); setSalvo(true)
-      } catch { /* sessão corrompida: ignora, app abre limpo */ }
-    })()
-  }, [])
-
-  // salva as edições automaticamente (debounce curto) — o DXF é salvo ao abrir o arquivo
+    if (!projetoId || !dxfRaw) return
+    const dados = { resolutions, glebaConf, numeracao, modeloId, sel }
+    try { localStorage.setItem('prancheta-proj-' + projetoId, JSON.stringify(dados)) } catch { /* ignora */ }
+    setSalvo(false)
+    const t = setTimeout(() => { salvarProjeto(projetoId, { dados }).then(() => setSalvo(true)).catch(() => { }) }, 600)
+    return () => clearTimeout(t)
+  }, [projetoId, dxfRaw, resolutions, glebaConf, numeracao, modeloId, sel])
+  // flush ao trocar de aba / fechar
   useEffect(() => {
-    if (!dxfRaw) return
-    const edits = { resolutions, glebaConf, numeracao, modeloId, sel }
-    // espelho síncrono em localStorage: garante que, mesmo fechando a aba no meio, nada se perde
-    try { localStorage.setItem('prancheta-edits', JSON.stringify(edits)) } catch { /* ignora */ }
-    const id = setTimeout(() => { idbSet('edits', edits).then(ok => { if (ok) setSalvo(true) }) }, 350)
-    return () => clearTimeout(id)
-  }, [dxfRaw, resolutions, glebaConf, numeracao, modeloId, sel])
-  // salva na hora ao trocar de aba / fechar (não espera o debounce)
-  useEffect(() => {
-    const flush = () => { if (dxfRaw) idbSet('edits', { resolutions, glebaConf, numeracao, modeloId, sel }) }
+    const flush = () => { if (projetoId && dxfRaw) salvarProjeto(projetoId, { dados: { resolutions, glebaConf, numeracao, modeloId, sel } }).catch(() => { }) }
     const onVis = () => { if (document.visibilityState === 'hidden') flush() }
-    document.addEventListener('visibilitychange', onVis); window.addEventListener('pagehide', flush)
-    return () => { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('pagehide', flush) }
-  }, [dxfRaw, resolutions, glebaConf, numeracao, modeloId, sel])
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [projetoId, dxfRaw, resolutions, glebaConf, numeracao, modeloId, sel])
 
-  function novoProjeto() {
-    if (dxfRaw && !confirm('Fechar o projeto atual? O que estiver salvo aqui será apagado.')) return
-    idbDel('dxf'); idbDel('edits'); try { localStorage.removeItem('prancheta-edits') } catch { /* ignora */ }
-    setState(null); setResolutions({}); setGlebaConf({}); setDxfRaw(''); setFileName(''); setSel(-1); setNumeracaoState('dxf'); setSalvo(false); setErro('')
+  function limparAberto() {
+    setState(null); setProjetoId(null); setResolutions({}); setGlebaConf({}); setDxfRaw(''); setFileName(''); setSel(-1); setNumeracaoState('dxf'); setModal(null)
+  }
+  function voltarProjetos() { limparAberto(); setView('projetos'); setErro('') }
+
+  // abre um projeto já salvo na nuvem
+  async function onAbrir(p) {
+    setErro('')
+    try {
+      const proj = await carregarProjeto(p.id)
+      if (!proj.dxfRaw) { setErro('Projeto sem DXF salvo.'); return }
+      const model = parseDXF(proj.dxfRaw), sources = collectSources(model)
+      const dados = proj.dados || {}
+      const st = buildLoteamento(model, sources, { resolutions: dados.resolutions || {}, numeracao: dados.numeracao || 'dxf' })
+      setProjetoId(p.id); setState(st); setResolutions(dados.resolutions || {}); setGlebaConf(dados.glebaConf || {})
+      setNumeracaoState(dados.numeracao || 'dxf'); if (dados.modeloId) setModeloId(dados.modeloId)
+      setFileName(proj.arquivo || ''); setSel(dados.sel ?? -1); setDxfRaw(proj.dxfRaw); setView('memorial'); setSalvo(true)
+    } catch (err) { setErro('Falha ao abrir: ' + err.message) }
   }
 
-  async function onFile(e) {
+  // novo projeto: lê o DXF, cria na nuvem e abre
+  async function onNovo(e) {
     const f = e.target.files[0]; if (!f) return
-    setErro('')
+    e.target.value = ''; setErro('')
     try {
       if (/\.dwg$/i.test(f.name)) { setErro('Arquivo .dwg não é lido diretamente — exporte como .dxf no AutoCAD.'); return }
       const raw = decodeDXF(await f.arrayBuffer())
-      const model = parseDXF(raw)
-      const sources = collectSources(model)
-      const st = buildLoteamento(model, sources, { resolutions: {}, numeracao })
+      const model = parseDXF(raw), sources = collectSources(model)
+      const st = buildLoteamento(model, sources, { resolutions: {}, numeracao: 'dxf' })
       if (!st.lots.length) {
-        const temGeo = (model.entities || []).some(e => e.type === 'line' || e.type === 'arc' || e.type === 'lwpolyline')
+        const temGeo = (model.entities || []).some(x => x.type === 'line' || x.type === 'arc' || x.type === 'lwpolyline')
         setErro(temGeo
-          ? 'O desenho foi lido, mas nenhum LOTE foi reconhecido. Cada lote precisa ser uma POLILINHA FECHADA (na camada "LOTE") com um texto "LOTE nn" dentro. Desenho de agrimensor com linhas soltas e pontos numerados (como um lote avulso) não é lido — abra a planta do loteamento com os lotes fechados.'
+          ? 'O desenho foi lido, mas nenhum LOTE foi reconhecido. Cada lote precisa ser uma POLILINHA FECHADA (na camada "LOTE") com um texto "LOTE nn" dentro. Desenho de agrimensor com linhas soltas e pontos numerados não é lido — abra a planta do loteamento com os lotes fechados.'
           : 'Nenhum lote encontrado. Confirme que é um DXF de loteamento (lotes como polilinha fechada na camada "LOTE", com rótulo "LOTE nn").')
       }
-      setState(st); setResolutions({}); setGlebaConf({}); setFileName(f.name); setSel(-1); setDxfRaw(raw)
-      idbDel('edits'); try { localStorage.removeItem('prancheta-edits') } catch { /* ignora */ }
-      idbSet('dxf', { dxfRaw: raw, fileName: f.name }).then(ok => setSalvo(!!ok))
-    } catch (err) { setErro('Falha ao ler o arquivo: ' + err.message) }
-    e.target.value = ''
+      const nome = f.name.replace(/\.(dxf|txt)$/i, '')
+      const id = await criarProjeto({ nome, dxfRaw: raw, arquivo: f.name, dados: {} })
+      setProjetoId(id); setState(st); setResolutions({}); setGlebaConf({}); setFileName(f.name); setSel(-1); setDxfRaw(raw); setNumeracaoState('dxf'); setView('memorial'); setSalvo(true)
+    } catch (err) { setErro('Falha ao criar o projeto: ' + err.message) }
   }
+
   function resolveSide(sk, kind, val) {
     const nr = { ...resolutions }; if (!kind) delete nr[sk]; else nr[sk] = { kind, val }
     setResolutions(nr)
@@ -128,16 +143,25 @@ export default function App() {
   const quadro = useMemo(() => state ? computeQuadroAreas(state) : null, [state])
   const nPend = state ? state.lots.reduce((a, l) => a + l.pend, 0) : 0
   const lot = state && sel >= 0 ? state.lots[sel] : null
+  const email = session.user?.email || ''
+  const sair = () => supabase.auth.signOut({ scope: 'local' })
 
-  if (view === 'modelos') return (
-    <div className="app">
-      <ModelosPage onClose={() => { setModelos(listModelos()); setView('memorial') }} />
-    </div>
-  )
+  if (view === 'modelos') return <div className="app"><ModelosPage onClose={() => { setModelos(listModelos()); setView(state ? 'memorial' : 'projetos') }} /></div>
+  if (view === 'marcos') return <div className="app"><MarcosPage state={state} numeracao={numeracao} setNumeracao={setNumeracao} loteamento={loteamento} dxfRaw={dxfRaw} onClose={() => setView('memorial')} /></div>
 
-  if (view === 'marcos') return (
+  if (view === 'projetos') return (
     <div className="app">
-      <MarcosPage state={state} numeracao={numeracao} setNumeracao={setNumeracao} loteamento={loteamento} dxfRaw={dxfRaw} onClose={() => setView('memorial')} />
+      <header className="topbar">
+        <div className="brand"><span className="mark">📐</span><span className="name">Prancheta</span><span className="tag">memorial de loteamento · Young</span></div>
+        <div className="actions">
+          <button className="btn" onClick={() => setView('modelos')} title="Definir a redação do memorial por cidade/cartório">⚙ Modelos</button>
+          <span className="tb-div" />
+          <span className="user-chip" title={email}>{email}</span>
+          <button className="btn ghost sm" onClick={sair}>Sair</button>
+        </div>
+      </header>
+      {erro && <div className="banner">{erro}</div>}
+      <ProjetosPage onAbrir={onAbrir} onNovo={onNovo} onErro={setErro} />
     </div>
   )
 
@@ -146,21 +170,19 @@ export default function App() {
       <header className="topbar">
         <div className="brand"><span className="mark">📐</span><span className="name">Prancheta</span><span className="tag">memorial de loteamento · Young</span></div>
         <div className="actions">
+          <button className="btn" onClick={voltarProjetos} title="Voltar aos projetos (o atual fica salvo)">← Projetos</button>
           <label className="fields-inline">Modelo (cidade)
             <select value={modeloId} onChange={e => setModeloId(e.target.value)}>
               {modelos.map(m => <option key={m.id} value={m.id}>{m.nome}</option>)}
             </select>
           </label>
           <div className="fields-inline">Loteamento <span className="field-ro">{loteamento}</span></div>
-          <div className="fields-inline">Município <span className="field-ro">{municipio}</span></div>
           <button className="btn" onClick={() => setView('modelos')} title="Definir a redação do memorial por cidade/cartório">⚙ Modelos</button>
           <span className="tb-div" />
           {state && <>
             <button className="btn primary" onClick={onExport} disabled={exporting}>{exporting ? 'Gerando…' : '⬇ Word'}</button>
-            <button className="btn" onClick={novoProjeto} title="Fechar e limpar o projeto atual">Novo</button>
-            {salvo && <span className="saved-chip" title="Salvo automaticamente neste navegador">✓ salvo</span>}
+            <span className="saved-chip" title="Salvo na nuvem automaticamente">{salvo ? '✓ salvo na nuvem' : 'salvando…'}</span>
           </>}
-          <label className={'btn' + (state ? '' : ' primary')}>Abrir .dxf<input type="file" accept=".dxf,.txt" hidden onChange={onFile} /></label>
         </div>
       </header>
 
@@ -184,20 +206,7 @@ export default function App() {
       {erro && <div className="banner">{erro}</div>}
 
       {!state ? (
-        <main className="empty-state">
-          <div className="es-card">
-            <div className="es-icon">📐</div>
-            <h2>Abra o DXF do loteamento</h2>
-            <p>A ferramenta lê o desenho e gera o memorial descritivo de cada lote, da gleba e das áreas públicas — com as confrontações identificadas automaticamente.</p>
-            <label className="btn primary lg">Abrir arquivo .dxf<input type="file" accept=".dxf,.txt" hidden onChange={onFile} /></label>
-            <ol className="es-steps">
-              <li><b>1</b> Abra o DXF do loteamento</li>
-              <li><b>2</b> Revise os lotes e defina as confrontações pendentes</li>
-              <li><b>3</b> Numere os marcos</li>
-              <li><b>4</b> Exporte o memorial (Word) e a planta (DXF)</li>
-            </ol>
-          </div>
-        </main>
+        <main className="empty-state"><div className="detail-empty">Carregando projeto…</div></main>
       ) : (
         <main className="workspace">
           <aside className="panel">
