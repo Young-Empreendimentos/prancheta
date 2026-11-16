@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from 'react'
+import { useRef, useEffect, useCallback, useState } from 'react'
 import { drawModel, computeBBox, fitView } from '../engine/draw.js'
 
 function bboxOf(verts) {
@@ -12,6 +12,15 @@ export default function Viewer({ model, lot, marcos = null }) {
   const canvasRef = useRef(null)
   const view = useRef(null)
   const drag = useRef(null)
+  const [big, setBig] = useState(false)   // ampliado (tela cheia)
+
+  // Esc fecha o modo ampliado
+  useEffect(() => {
+    if (!big) return
+    const onKey = e => { if (e.key === 'Escape') setBig(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [big])
 
   const redraw = useCallback(() => {
     const cv = canvasRef.current; if (!cv || !model || !view.current) return
@@ -54,9 +63,13 @@ export default function Viewer({ model, lot, marcos = null }) {
   }
 
   return (
-    <div className="viewer">
-      <canvas ref={canvasRef} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp} onWheel={onWheel} />
-      <div className="viewer-hint">arraste para mover · scroll para zoom</div>
-    </div>
+    <>
+      {big && <div className="viewer-backdrop" onClick={() => setBig(false)} />}
+      <div className={'viewer' + (big ? ' viewer-max' : '')}>
+        <canvas ref={canvasRef} onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp} onWheel={onWheel} />
+        <button className="viewer-btn" onClick={() => setBig(b => !b)} title={big ? 'Reduzir (Esc)' : 'Ampliar'}>{big ? '✕' : '⛶'}</button>
+        <div className="viewer-hint">arraste para mover · scroll para zoom{big ? ' · Esc para fechar' : ''}</div>
+      </div>
+    </>
   )
 }

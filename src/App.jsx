@@ -74,7 +74,12 @@ export default function App() {
       const model = parseDXF(raw)
       const sources = collectSources(model)
       const st = buildLoteamento(model, sources, { resolutions: {}, numeracao })
-      if (!st.lots.length) setErro('Nenhum lote encontrado. Confirme que é um DXF de loteamento (lotes com rótulo "LOTE nn").')
+      if (!st.lots.length) {
+        const temGeo = (model.entities || []).some(e => e.type === 'line' || e.type === 'arc' || e.type === 'lwpolyline')
+        setErro(temGeo
+          ? 'O desenho foi lido, mas nenhum LOTE foi reconhecido. Cada lote precisa ser uma POLILINHA FECHADA (na camada "LOTE") com um texto "LOTE nn" dentro. Desenho de agrimensor com linhas soltas e pontos numerados (como um lote avulso) não é lido — abra a planta do loteamento com os lotes fechados.'
+          : 'Nenhum lote encontrado. Confirme que é um DXF de loteamento (lotes como polilinha fechada na camada "LOTE", com rótulo "LOTE nn").')
+      }
       setState(st); setResolutions({}); setGlebaConf({}); setFileName(f.name); setSel(-1); setDxfRaw(raw)
       idbDel('edits'); idbSet('dxf', { dxfRaw: raw, fileName: f.name }).then(ok => setSalvo(!!ok))
     } catch (err) { setErro('Falha ao ler o arquivo: ' + err.message) }
