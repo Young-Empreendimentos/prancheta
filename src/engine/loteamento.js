@@ -308,10 +308,19 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
     for (const t of soltos) { if (usedSolto.has(t)) continue; const d = Math.hypot(t.x - C[0], t.y - C[1]); if (d < bd) { bd = d; best = t } }
     if (best) { usedSolto.add(best); par.lbl = best }
   }
+  // Se o desenho tem rótulos "LOTE nn", exige o rótulo (comportamento validado). Se NÃO tem nenhum,
+  // aceita toda polilinha fechada da camada de lote como lote e numera automaticamente (num=null aqui).
+  const exigeRotulo = labels.length > 0
   const cand = []
   for (const { p, lbl } of pares) {
-    if (!lbl) continue
-    const num = (lbl.text.match(/\d+/) || ['?'])[0]
+    let num = null
+    if (lbl) num = (lbl.text.match(/\d+/) || ['?'])[0]
+    else {
+      if (exigeRotulo) continue
+      const Cc = centroid(p.verts)
+      const dentro = numTexts.filter(t => pip([t.x, t.y], p.verts)).sort((a, b) => Math.hypot(a.x - Cc[0], a.y - Cc[1]) - Math.hypot(b.x - Cc[0], b.y - Cc[1]))
+      if (dentro.length) num = dentro[0].text   // número solto dentro do lote, se houver
+    }
     const qm = (p.src && p.src.match(/(?:q(?:ua|au)dra|\.Q)\s*0?(\d+)/i) || [])[1] || '?'
     let vs = p.verts, bg = p.bulges || []
     if (signedArea(vs) > 0) { const r = reversePoly(vs, bg); vs = r.v; bg = r.b }
@@ -330,6 +339,14 @@ export function buildLoteamento(model, sources, { lotLayer = 'LOTE', resolutions
     if (kept.some(k => Math.hypot(k.c[0] - cCent[i][0], k.c[1] - cCent[i][1]) < 1 && Math.abs(k.a - cArea[i]) < Math.max(1, cArea[i] * 0.2))) return
     kept.push({ c: cCent[i], a: cArea[i] }); lots.push(l)
   })
+  // numeração automática dos lotes sem número (desenho sem "LOTE nn"), em ordem de leitura (cima→baixo, esq→dir)
+  const semNum = lots.filter(l => l.num == null)
+  if (semNum.length) {
+    const usados = new Set(lots.filter(l => l.num != null).map(l => String(parseInt(l.num))))
+    semNum.sort((a, b) => { const ca = centroid(a.verts), cb = centroid(b.verts); return (cb[1] - ca[1]) || (ca[0] - cb[0]) })
+    let n = 0
+    semNum.forEach(l => { do { n++ } while (usados.has(String(n))); l.num = String(n).padStart(2, '0') })
+  }
   lots.sort((a, b) => { const qa = parseInt(a.quadra) || 999, qb = parseInt(b.quadra) || 999; if (qa !== qb) return qa - qb; return (parseInt(a.num) || 0) - (parseInt(b.num) || 0) })
 
   // áreas públicas (polígonos "ÁREA ..." que NÃO englobam lotes — exclui gleba/quadra)
