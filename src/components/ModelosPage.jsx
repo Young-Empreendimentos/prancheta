@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { listModelos, saveModelo, deleteModelo, novoModeloBase, aplicarTipo } from '../models/modelo.js'
 import { lotMemorial } from '../engine/loteamento.js'
 
@@ -40,6 +40,26 @@ export default function ModelosPage({ onClose }) {
   const updDados = patch => { setDraft(d => ({ ...d, dados: { ...(d.dados || {}), ...patch } })); setDirty(true) }
   const addConf = () => { const v = novaConf.trim(); if (!v || (draft.confrontacoes || []).includes(v)) return; setDraft(d => ({ ...d, confrontacoes: [...(d.confrontacoes || []), v] })); setDirty(true); setNovaConf('') }
   const rmConf = v => { setDraft(d => ({ ...d, confrontacoes: (d.confrontacoes || []).filter(x => x !== v) })); setDirty(true) }
+
+  // AUTO-SAVE: toda alteração do modelo é salva sozinha (não depende de clicar "Salvar").
+  // Assim, se fechar a tela, nada do que foi preenchido/alterado se perde.
+  const saveTimer = useRef(null)
+  useEffect(() => {
+    if (!draft || !draft.id) return
+    clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => {
+      const m = { ...draft, nome: draft.nome || (draft.cidade && draft.uf ? `${draft.cidade}/${draft.uf}` : draft.cidade || 'Modelo') }
+      saveModelo(m); setModelos(listModelos()); setDirty(false)
+    }, 400)
+    return () => clearTimeout(saveTimer.current)
+  }, [draft])
+  // salva na hora se trocar de aba / fechar (não espera o debounce)
+  useEffect(() => {
+    const flush = () => { if (draft && draft.id) { const m = { ...draft, nome: draft.nome || draft.cidade || 'Modelo' }; saveModelo(m) } }
+    const onVis = () => { if (document.visibilityState === 'hidden') flush() }
+    document.addEventListener('visibilitychange', onVis); window.addEventListener('pagehide', flush)
+    return () => { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('pagehide', flush) }
+  }, [draft])
 
   function salvar() {
     const m = { ...draft, nome: draft.nome || (draft.cidade && draft.uf ? `${draft.cidade}/${draft.uf}` : draft.cidade || 'Modelo') }
@@ -89,7 +109,7 @@ export default function ModelosPage({ onClose }) {
 
       <div className="mod-edit">
         <div className="mod-edit-head">
-          <h2>{draft.nome || 'Novo modelo'} {dirty && <em className="dirty">• não salvo</em>}</h2>
+          <h2>{draft.nome || 'Novo modelo'} {dirty ? <em className="dirty">• salvando…</em> : <em className="dirty" style={{ color: 'var(--ok)' }}>✓ salvo automaticamente</em>}</h2>
           <div className="mod-actions">
             <label className="btn ghost sm">Importar JSON<input type="file" accept=".json" hidden onChange={importar} /></label>
             <button className="btn ghost sm" onClick={exportar}>Exportar JSON</button>
@@ -111,6 +131,7 @@ export default function ModelosPage({ onClose }) {
             <Field label="Nome do modelo"><input value={draft.nome} onChange={e => upd({ nome: e.target.value })} placeholder="ex.: Alegrete/RS" /></Field>
             <Field label={(draft.tipo === 'condominio' ? 'Condomínio' : 'Loteamento')} hint="puxado direto no memorial"><input value={draft.loteamento || ''} onChange={e => upd({ loteamento: e.target.value })} placeholder="ex.: Novo Alegrete" /></Field>
             <Field label="Município" hint="puxado direto no memorial"><input value={draft.municipio || ''} onChange={e => upd({ municipio: e.target.value })} placeholder="ex.: Alegrete/RS" /></Field>
+            <Field label="Bairro" hint="usado no cabeçalho dos modelos que pedem bairro (ex.: Santo Antônio da Patrulha)"><input value={draft.dados?.bairro || ''} onChange={e => updDados({ bairro: e.target.value })} placeholder="ex.: Jaú" /></Field>
           </section>
 
           <section className="mod-card">

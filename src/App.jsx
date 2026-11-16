@@ -41,7 +41,11 @@ export default function App() {
   useEffect(() => {
     (async () => {
       const d = await idbGet('dxf'); if (!d || !d.dxfRaw) return
-      const e = (await idbGet('edits')) || {}
+      // edições: prefere o espelho síncrono do localStorage (mais fresco), senão o IndexedDB
+      let e = null
+      try { e = JSON.parse(localStorage.getItem('prancheta-edits') || 'null') } catch { e = null }
+      if (!e) e = await idbGet('edits')
+      e = e || {}
       try {
         const model = parseDXF(d.dxfRaw), sources = collectSources(model)
         const st = buildLoteamento(model, sources, { resolutions: e.resolutions || {}, numeracao: e.numeracao || 'dxf' })
@@ -52,16 +56,26 @@ export default function App() {
     })()
   }, [])
 
-  // salva as edições automaticamente (debounce) — o DXF é salvo ao abrir o arquivo
+  // salva as edições automaticamente (debounce curto) — o DXF é salvo ao abrir o arquivo
   useEffect(() => {
     if (!dxfRaw) return
-    const id = setTimeout(() => { idbSet('edits', { resolutions, glebaConf, numeracao, modeloId, sel }).then(ok => { if (ok) setSalvo(true) }) }, 600)
+    const edits = { resolutions, glebaConf, numeracao, modeloId, sel }
+    // espelho síncrono em localStorage: garante que, mesmo fechando a aba no meio, nada se perde
+    try { localStorage.setItem('prancheta-edits', JSON.stringify(edits)) } catch { /* ignora */ }
+    const id = setTimeout(() => { idbSet('edits', edits).then(ok => { if (ok) setSalvo(true) }) }, 350)
     return () => clearTimeout(id)
+  }, [dxfRaw, resolutions, glebaConf, numeracao, modeloId, sel])
+  // salva na hora ao trocar de aba / fechar (não espera o debounce)
+  useEffect(() => {
+    const flush = () => { if (dxfRaw) idbSet('edits', { resolutions, glebaConf, numeracao, modeloId, sel }) }
+    const onVis = () => { if (document.visibilityState === 'hidden') flush() }
+    document.addEventListener('visibilitychange', onVis); window.addEventListener('pagehide', flush)
+    return () => { document.removeEventListener('visibilitychange', onVis); window.removeEventListener('pagehide', flush) }
   }, [dxfRaw, resolutions, glebaConf, numeracao, modeloId, sel])
 
   function novoProjeto() {
     if (dxfRaw && !confirm('Fechar o projeto atual? O que estiver salvo aqui será apagado.')) return
-    idbDel('dxf'); idbDel('edits')
+    idbDel('dxf'); idbDel('edits'); try { localStorage.removeItem('prancheta-edits') } catch { /* ignora */ }
     setState(null); setResolutions({}); setGlebaConf({}); setDxfRaw(''); setFileName(''); setSel(-1); setNumeracaoState('dxf'); setSalvo(false); setErro('')
   }
 
@@ -81,7 +95,8 @@ export default function App() {
           : 'Nenhum lote encontrado. Confirme que é um DXF de loteamento (lotes como polilinha fechada na camada "LOTE", com rótulo "LOTE nn").')
       }
       setState(st); setResolutions({}); setGlebaConf({}); setFileName(f.name); setSel(-1); setDxfRaw(raw)
-      idbDel('edits'); idbSet('dxf', { dxfRaw: raw, fileName: f.name }).then(ok => setSalvo(!!ok))
+      idbDel('edits'); try { localStorage.removeItem('prancheta-edits') } catch { /* ignora */ }
+      idbSet('dxf', { dxfRaw: raw, fileName: f.name }).then(ok => setSalvo(!!ok))
     } catch (err) { setErro('Falha ao ler o arquivo: ' + err.message) }
     e.target.value = ''
   }
