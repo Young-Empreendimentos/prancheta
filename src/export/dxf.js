@@ -32,11 +32,16 @@ function sideLabels(verts, bulges, want, h) {
   return out
 }
 
-// Rótulo central (nº + área): HORIZONTAL (como na planta do arquiteto), nº em cima e área embaixo,
-// centralizados no lote. NÃO acompanha o ângulo do lote — fica sempre legível na horizontal.
+// Rótulo central (nº + área): "horizontal em relação ao LOTE" — acompanha a direção do lote (gira
+// junto, pelo maior lado), nº em cima e área embaixo, centralizado e sempre legível (render-rot2).
 function centerLabel(verts, lines) {
-  const C = centroid(verts), gap = 1.3, start = (lines.length - 1) / 2
-  return lines.map((t, k) => ({ x: C[0], y: C[1] + (start - k) * gap, ang: 0, text: t, kind: k === 0 ? 'num' : 'area' }))
+  const C = centroid(verts), n = verts.length
+  let best = -1, bi = 0
+  for (let i = 0; i < n; i++) { const a = verts[i], b = verts[(i + 1) % n]; const d = Math.hypot(b[0] - a[0], b[1] - a[1]); if (d > best) { best = d; bi = i } }
+  const a = verts[bi], b = verts[(bi + 1) % n]
+  const ang = legAng(b[0] - a[0], b[1] - a[1]), rad = ang * Math.PI / 180
+  const px = -Math.sin(rad), py = Math.cos(rad), gap = 1.3, start = (lines.length - 1) / 2
+  return lines.map((t, k) => ({ x: C[0] + px * (start - k) * gap, y: C[1] + py * (start - k) * gap, ang, text: t, kind: k === 0 ? 'num' : 'area' }))
 }
 
 const lyrOf = k => k === 'az' ? 'AZIMUTE' : k === 'cota' ? 'COTA' : (k === 'num' || k === 'area') ? 'ROTULO' : '0'
