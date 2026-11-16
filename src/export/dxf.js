@@ -6,13 +6,15 @@ import { azimuth, toGMS, arcInfo, centroid, areaWithArcs } from '../engine/geome
 
 const f = n => (Math.round(n * 1e6) / 1e6).toString()
 const fmtm = d => (Math.round(d * 100) / 100).toFixed(2).replace('.', ',')
+// alturas de texto (unidades do desenho): nº do lote 1,2; área / azimute / cota 0,8
+const ALT = { num: 1.2, area: 0.8, az: 0.8, cota: 0.8 }
 // ângulo de texto sempre legível (nunca de cabeça para baixo)
 function legAng(dx, dy) { let a = Math.atan2(dy, dx) * 180 / Math.PI; if (a > 90 || a <= -90) a -= 180; return a }
 
 // Rótulos de AZIMUTE/COTA de cada lado, deslocados para o INTERIOR do polígono (nunca saem das
 // linhas). SEM dedup: cada lote rotula seus próprios lados (lado compartilhado mostra as 2 direções).
 function sideLabels(verts, bulges, want, h) {
-  const C = centroid(verts), n = verts.length, off = h * 0.7, out = []
+  const C = centroid(verts), n = verts.length, off = 0.9, out = []
   for (let i = 0; i < n; i++) {
     const a = verts[i], b = verts[(i + 1) % n]
     const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy)
@@ -37,11 +39,11 @@ function centerLabel(verts, lines, h) {
   for (let i = 0; i < n; i++) { const a = verts[i], b = verts[(i + 1) % n]; const d = Math.hypot(b[0] - a[0], b[1] - a[1]); if (d > best) { best = d; bi = i } }
   const a = verts[bi], b = verts[(bi + 1) % n]
   const ang = legAng(b[0] - a[0], b[1] - a[1]), rad = ang * Math.PI / 180
-  const px = -Math.sin(rad), py = Math.cos(rad), gap = h * 1.5, start = (lines.length - 1) / 2
-  return lines.map((t, k) => ({ x: C[0] + px * (start - k) * gap, y: C[1] + py * (start - k) * gap, ang, text: t, kind: 'nome' }))
+  const px = -Math.sin(rad), py = Math.cos(rad), gap = 1.4, start = (lines.length - 1) / 2
+  return lines.map((t, k) => ({ x: C[0] + px * (start - k) * gap, y: C[1] + py * (start - k) * gap, ang, text: t, kind: k === 0 ? 'num' : 'area' }))
 }
 
-const lyrOf = k => k === 'az' ? 'AZIMUTE' : k === 'cota' ? 'COTA' : k === 'nome' ? 'ROTULO' : '0'
+const lyrOf = k => k === 'az' ? 'AZIMUTE' : k === 'cota' ? 'COTA' : (k === 'num' || k === 'area') ? 'ROTULO' : '0'
 
 // monta, para um polígono, todos os rótulos pedidos (centro + lados)
 function polyLabels(verts, bulges, lines, { rotulo, azimute, cota }, h) {
@@ -86,7 +88,7 @@ export function buildMarcosDxf(state, { marcos = true, rotulo = true, azimute = 
     p(0, 'POINT', 8, 'MARCOS', 10, f(m.x), 20, f(m.y), 30, '0')
     p(0, 'TEXT', 8, 'MARCOS', 10, f(m.x + h * 0.3), 20, f(m.y + h * 0.3), 30, '0', 40, f(h), 1, String(m.n), 7, 'STANDARD')
   }
-  const txt = lb => p(0, 'TEXT', 8, lyrOf(lb.kind), 10, f(lb.x), 20, f(lb.y), 30, '0', 40, f(lb.kind === 'nome' ? h : h * 0.7), 1, lb.text, 50, f(lb.ang), 72, 1, 11, f(lb.x), 21, f(lb.y), 31, '0', 7, 'STANDARD')
+  const txt = lb => p(0, 'TEXT', 8, lyrOf(lb.kind), 10, f(lb.x), 20, f(lb.y), 30, '0', 40, f(ALT[lb.kind] || 0.8), 1, lb.text, 50, f(lb.ang), 72, 1, 11, f(lb.x), 21, f(lb.y), 31, '0', 7, 'STANDARD')
   if (rotulo || azimute || cota) {
     for (const lot of state.lots) polyLabels(lot.verts, lot.bulges, lotLines(lot), { rotulo, azimute, cota }, h).forEach(txt)
     for (const ar of state.areaObjs || []) polyLabels(ar.verts, ar.bulges, areaLines(ar), { rotulo, azimute, cota }, h).forEach(txt)
@@ -122,7 +124,7 @@ export function buildPlantaMarcosDxf(original, state, { marcos = true, rotulo = 
     push(0, 'POINT', 5, hx(), 330, '1F', 100, 'AcDbEntity', 8, 'MARCOS', 100, 'AcDbPoint', 10, f(m.x), 20, f(m.y), 30, '0.0')
     push(0, 'TEXT', 5, hx(), 330, '1F', 100, 'AcDbEntity', 8, 'MARCOS', 100, 'AcDbText', 10, f(m.x + H * 0.3), 20, f(m.y + H * 0.3), 30, '0.0', 40, f(H), 1, String(m.n), 50, '0.0', 100, 'AcDbText')
   }
-  const txt = lb => push(0, 'TEXT', 5, hx(), 330, '1F', 100, 'AcDbEntity', 8, lyrOf(lb.kind), 100, 'AcDbText', 10, f(lb.x), 20, f(lb.y), 30, '0.0', 40, f(lb.kind === 'nome' ? H : H * 0.7), 1, lb.text, 50, f(lb.ang), 72, 1, 11, f(lb.x), 21, f(lb.y), 31, '0.0', 100, 'AcDbText', 73, 0)
+  const txt = lb => push(0, 'TEXT', 5, hx(), 330, '1F', 100, 'AcDbEntity', 8, lyrOf(lb.kind), 100, 'AcDbText', 10, f(lb.x), 20, f(lb.y), 30, '0.0', 40, f(ALT[lb.kind] || 0.8), 1, lb.text, 50, f(lb.ang), 72, 1, 11, f(lb.x), 21, f(lb.y), 31, '0.0', 100, 'AcDbText', 73, 0)
   if (rotulo || azimute || cota) {
     for (const lot of state.lots) polyLabels(lot.verts, lot.bulges, lotLines(lot), { rotulo, azimute, cota }, H).forEach(txt)
     for (const ar of state.areaObjs || []) polyLabels(ar.verts, ar.bulges, areaLines(ar), { rotulo, azimute, cota }, H).forEach(txt)

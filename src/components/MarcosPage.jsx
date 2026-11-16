@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { nb } from '../engine/extenso.js'
 import { exportMarcosDxf, exportPlantaMarcosDxf } from '../export/dxf.js'
 import Viewer from './Viewer.jsx'
@@ -19,6 +19,11 @@ export default function MarcosPage({ state, numeracao, setNumeracao, loteamento 
     // ao pedir marcos, garante a numeração gerada (os pontos só existem nesse modo)
     if (key === 'marcos' && next.marcos && numeracao !== 'gerar') setNumeracao('gerar')
   }
+  // garante que os pontos existam quando "Marcos" está marcado (mesmo sem clicar Gerar 1…N),
+  // senão o export sai sem marcos
+  useEffect(() => {
+    if (inc.marcos && state && numeracao !== 'gerar') setNumeracao('gerar')
+  }, [inc.marcos, state]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function exportarDXF() {
     setErro('')
