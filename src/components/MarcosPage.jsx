@@ -7,7 +7,10 @@ export default function MarcosPage({ state, numeracao, setNumeracao, loteamento 
   const gerado = numeracao === 'gerar' && state?.marcos
   const marcos = state?.marcos || []
   // o que incluir no DXF (independentes). Marcos (pontos) exigem a numeração gerada.
-  const [inc, setInc] = useState({ marcos: true, rotulo: true, azimute: false, cota: false })
+  // rótulo (nº+área) desmarcado por padrão: a maioria das plantas JÁ tem o nº do lote e a área
+  // desenhados — ligar isso em cima duplicaria (marque só em planta sem rótulo).
+  const [inc, setInc] = useState({ marcos: true, rotulo: false, azimute: false, cota: false })
+  const [erro, setErro] = useState('')
   const nadaSelecionado = !inc.marcos && !inc.rotulo && !inc.azimute && !inc.cota
 
   function toggle(key) {
@@ -18,9 +21,12 @@ export default function MarcosPage({ state, numeracao, setNumeracao, loteamento 
   }
 
   function exportarDXF() {
+    setErro('')
     const opts = { marcos: inc.marcos, rotulo: inc.rotulo, azimute: inc.azimute, cota: inc.cota }
-    if (dxfRaw) exportPlantaMarcosDxf(dxfRaw, state, loteamento, opts)
-    else exportMarcosDxf(state, loteamento, opts)
+    try {
+      if (dxfRaw) exportPlantaMarcosDxf(dxfRaw, state, loteamento, opts)
+      else exportMarcosDxf(state, loteamento, opts)
+    } catch (e) { setErro('Falha ao exportar: ' + e.message); console.error(e) }
   }
   function exportarCSV() {
     const linhas = [['Marco', 'Norte (Y)', 'Este (X)'], ...marcos.map(m => [m.n, nb(m.y, 3), nb(m.x, 3)])]
@@ -63,7 +69,7 @@ export default function MarcosPage({ state, numeracao, setNumeracao, loteamento 
               </label>
               <label className={'mp-chk' + (inc.rotulo ? ' on' : '')}>
                 <input type="checkbox" checked={inc.rotulo} onChange={() => toggle('rotulo')} />
-                <span>Nº + área do lote <small>no centro, alinhado à face maior (camada ROTULO)</small></span>
+                <span>Nº + área do lote <small>no centro, alinhado à face maior — marque só se a planta <b>não</b> tiver (senão duplica)</small></span>
               </label>
               <label className={'mp-chk' + (inc.azimute ? ' on' : '')}>
                 <input type="checkbox" checked={inc.azimute} onChange={() => toggle('azimute')} />
@@ -74,6 +80,7 @@ export default function MarcosPage({ state, numeracao, setNumeracao, loteamento 
                 <span>Cota <small>distâncias; em arco, raio + desenvolvimento (camada COTA)</small></span>
               </label>
               <button className="btn sm primary mp-exp" disabled={nadaSelecionado} onClick={exportarDXF}>⬇ Exportar DXF</button>
+              {erro && <p className="mp-hint2" style={{ color: 'var(--danger)' }}>{erro}</p>}
               <button className="btn sm" onClick={exportarCSV} disabled={!gerado}>⬇ Coordenadas dos marcos (CSV)</button>
               <p className="mp-hint2">{dxfRaw ? 'Injetado na sua planta original (preserva blocos, hachuras e cotas).' : 'DXF novo com os lotes.'} Cada item vai em sua própria camada — liga/desliga no AutoCAD.</p>
             </div>

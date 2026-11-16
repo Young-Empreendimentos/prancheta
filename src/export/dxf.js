@@ -128,8 +128,10 @@ export function buildPlantaMarcosDxf(original, state, { marcos = true, rotulo = 
     for (const ar of state.areaObjs || []) polyLabels(ar.verts, ar.bulges, areaLines(ar), { rotulo, azimute, cota }, H).forEach(txt)
   }
   if (hsIdx >= 0) lines[hsIdx + 2] = h.toString(16).toUpperCase()
-  lines.splice(endIdx - 1, 0, ...ent)
-  return lines.join(nl) + nl
+  // insere antes do "0/ENDSEC" que fecha a seção ENTITIES. Usa concat (NÃO splice(...ent)):
+  // espalhar dezenas de milhares de itens como argumentos estoura o limite do JS (RangeError).
+  const out = lines.slice(0, endIdx - 1).concat(ent, lines.slice(endIdx - 1))
+  return out.join(nl) + nl
 }
 
 export function exportPlantaMarcosDxf(original, state, nome = 'loteamento', opts = {}) {
